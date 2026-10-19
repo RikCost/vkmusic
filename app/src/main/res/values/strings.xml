@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">MuVK</string>
+    <string name="app_version">Версия %1$s (сборка %2$d)</string>
+    <string name="downloads_channel_name">Загрузки</string>
+</resources>

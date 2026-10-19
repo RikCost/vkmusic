@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1104" height="552" viewBox="0 0 1104 552">
+  <title>VK Music launcher icon preview</title>
+  <defs>
+    <linearGradient id="bg" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="108" y2="108">
+      <stop offset="0" stop-color="#2787F5"/>
+      <stop offset="1" stop-color="#0057D9"/>
+    </linearGradient>
+    <g id="icon">
+      <rect x="0" y="0" width="108" height="108" fill="url(#bg)"/>
+      <path fill="#FFFFFF" d="M30.6,72.42 A10,7.5 -20 1,1 49.4,65.58 A10,7.5 -20 1,1 30.6,72.42 Z M44.74,67.6 V29.5 Q44.74,27 47.24,27 H49.74 C50.6,32.5 54.6,35 58.2,38.2 C61.8,41.4 63.2,45 61.8,49 C61.5,49.8 60.5,49.6 60.7,48.8 C61.2,45 59.2,42.6 55.4,41.2 C53.6,40.6 51.7,40.2 49.74,40 V67.6 Z"/>
+      <g fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round">
+        <path d="M61.96,56.64 A13,13 0 0,1 61.96,73.36"/>
+        <path d="M68.85,50.86 A22,22 0 0,1 68.85,79.14"/>
+      </g>
+    </g>
+    <!-- Launcher circle mask: 72dp visible area of the 108dp canvas -->
+    <clipPath id="circle"><circle cx="54" cy="54" r="36"/></clipPath>
+  </defs>
+  <rect width="1104" height="552" fill="#ECEFF3"/>
+  <!-- Full 108dp adaptive canvas at 512x512 (dashed circle = 66dp safe zone) -->
+  <g transform="translate(20,20) scale(4.740740741)">
+    <use xlink:href="#icon"/>
+    <circle cx="54" cy="54" r="33" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="0.3" stroke-dasharray="1.5 1.5"/>
+  </g>
+  <!-- Circle-masked launcher appearance (72dp viewport scaled to 512x512) -->
+  <g transform="translate(572,20) scale(7.111111111) translate(-18,-18)">
+    <g clip-path="url(#circle)"><use xlink:href="#icon"/></g>
+  </g>
+</svg>
