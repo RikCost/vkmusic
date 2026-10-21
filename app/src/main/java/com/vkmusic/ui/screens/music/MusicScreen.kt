@@ -1,7 +1,16 @@
 package com.vkmusic.ui.screens.music
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridItemSpanScope
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,12 +48,11 @@ import com.vkmusic.ui.components.FilterField
 import com.vkmusic.ui.components.LoadingBox
 import com.vkmusic.ui.components.MessageBox
 import com.vkmusic.ui.components.PageTopBar
-import com.vkmusic.ui.components.SectionTitle
 import com.vkmusic.ui.components.TrackSourcePage
 import com.vkmusic.ui.navigation.LocalNavigator
 import com.vkmusic.ui.screens.bottomOnly
 
-private val TABS = listOf("Музыка", "Плейлисты", "Загрузки")
+private val TABS = listOf("Музыка", "Плейлисты", "Альбомы", "Загрузки")
 
 @Composable
 fun MusicScreen(contentPadding: PaddingValues) {
@@ -64,6 +73,7 @@ fun MusicScreen(contentPadding: PaddingValues) {
             when (tab) {
                 0 -> MyTracksTab(contentPadding)
                 1 -> PlaylistsTab(contentPadding, playlistsViewModel)
+                2 -> AlbumsTab(contentPadding)
                 else -> DownloadsTab(contentPadding)
             }
         }
@@ -113,7 +123,6 @@ private fun DownloadsTab(contentPadding: PaddingValues, viewModel: DownloadsView
 private fun PlaylistsTab(contentPadding: PaddingValues, viewModel: PlaylistsViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val navigator = LocalNavigator.current
-    val (albums, playlists) = state.data.partition { it.isAlbum }
 
     PullToRefreshBox(
         isRefreshing = state.isLoading && state.data.isNotEmpty(),
@@ -126,17 +135,65 @@ private fun PlaylistsTab(contentPadding: PaddingValues, viewModel: PlaylistsView
                 state.isLoading && state.data.isEmpty() -> item { LoadingBox() }
                 state.data.isEmpty() -> item { MessageBox("Плейлистов пока нет") }
             }
-            if (playlists.isNotEmpty()) {
-                item { SectionTitle("Ваши плейлисты") }
-                items(playlists, key = { it.id }) { PlaylistRow(it, navigator::openPlaylist) }
-            }
-            if (albums.isNotEmpty()) {
-                item { SectionTitle("Альбомы") }
-                items(albums, key = { it.id }) { PlaylistRow(it, navigator::openPlaylist) }
-            }
+            items(state.data, key = { it.id }) { PlaylistRow(it, navigator::openPlaylist) }
         }
     }
 }
+
+/** Альбомы исполнителей, добавленные к себе, — сеткой обложек, как блоки каталога Meridius. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AlbumsTab(contentPadding: PaddingValues, viewModel: AlbumsViewModel = hiltViewModel()) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val navigator = LocalNavigator.current
+
+    PullToRefreshBox(
+        isRefreshing = state.isLoading && state.data.isNotEmpty(),
+        onRefresh = viewModel::refresh,
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(ALBUM_CELL),
+            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = contentPadding.calculateBottomPadding() + 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            val fullWidth: LazyGridItemSpanScope.() -> GridItemSpan = { GridItemSpan(maxLineSpan) }
+            when {
+                state.error != null -> item(span = fullWidth) { MessageBox(state.error.orEmpty()) }
+                state.isLoading && state.data.isEmpty() -> item(span = fullWidth) { LoadingBox() }
+                state.data.isEmpty() -> item(span = fullWidth) {
+                    MessageBox("Альбомов пока нет. Добавить альбом к себе можно кнопкой «+» на его странице.")
+                }
+            }
+            gridItems(state.data, key = { it.id }) { album -> AlbumCard(album, navigator::openPlaylist) }
+        }
+    }
+}
+
+@Composable
+private fun AlbumCard(album: Playlist, onOpen: (Playlist) -> Unit) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onOpen(album) }.padding(4.dp)) {
+        Artwork(album.coverUrl, album.id, Modifier.fillMaxWidth().aspectRatio(1f), cornerRadius = 6.dp)
+        Text(
+            album.title,
+            style = MaterialTheme.typography.titleSmall,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 6.dp),
+        )
+        Text(
+            album.subtitle.ifBlank { "${album.trackCount} треков" },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+private val ALBUM_CELL = 150.dp
 
 @Composable
 fun PlaylistRow(playlist: Playlist, onOpen: (Playlist) -> Unit) {

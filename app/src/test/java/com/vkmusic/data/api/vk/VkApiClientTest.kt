@@ -207,4 +207,24 @@ class VkApiClientTest {
         assertEquals(listOf(1000L, 2000L), lyrics.lines.map { it.startMs })
         assertTrue(requireNotNull(server.takeRequest().body).utf8().contains("audio_id=5_1"))
     }
+
+    @Test
+    fun `my albums request albums filter and keep only artist albums`() = runTest {
+        server.enqueue(
+            MockResponse.Builder().body(
+                """
+                {"response":{"count":2,"items":[
+                  {"id":1,"owner_id":42,"title":"Мой плейлист"},
+                  {"id":2,"owner_id":-5,"title":"Альбом","main_artists":[{"name":"Artist","id":"a1"}]}
+                ]}}
+                """.trimIndent(),
+            ).build(),
+        )
+
+        val albums = repository.getMyAlbums()
+
+        assertTrue(requireNotNull(server.takeRequest().body).utf8().contains("filters=albums"))
+        assertEquals(listOf("Альбом"), albums.map { it.title })
+        assertTrue(albums.single().isAlbum)
+    }
 }

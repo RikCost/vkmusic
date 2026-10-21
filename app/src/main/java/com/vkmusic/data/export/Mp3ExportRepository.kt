@@ -38,6 +38,7 @@ sealed interface ExportStatus {
 class Mp3ExportRepository @Inject constructor(
     @ApplicationContext context: Context,
     private val json: Json,
+    private val cancellations: Mp3ExportCancellations,
     @ApplicationScope scope: CoroutineScope,
 ) {
     private val workManager = WorkManager.getInstance(context)
@@ -57,8 +58,10 @@ class Mp3ExportRepository @Inject constructor(
 
     fun enqueue(tracks: List<Track>, subfolder: String? = null) {
         val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
-        tracks.filter { it.isPlayable }.distinctBy { it.id }.forEach { track ->
+        val pending = statuses.value.filterValues { it is ExportStatus.Queued || it is ExportStatus.Running }.keys
+        tracks.filter { it.isPlayable && it.id !in pending }.distinctBy { it.id }.forEach { track ->
             titles[track.id] = "${track.artist} — ${track.title}"
+            cancellations.forget(track.id)
             val request = OneTimeWorkRequestBuilder<Mp3ExportWorker>()
                 .setInputData(
                     workDataOf(
@@ -71,14 +74,13 @@ class Mp3ExportRepository @Inject constructor(
                 .addTag(TAG)
                 .addTag(TRACK_TAG_PREFIX + track.id)
                 .build()
-            // Повторное нажатие на уже сохраняемый трек не ставит вторую задачу; завершённый можно сохранить снова.
-            workManager.enqueueUniqueWork(UNIQUE_PREFIX + track.id, ExistingWorkPolicy.KEEP, request)
+            // Одна цепочка на всё сохранение: треки идут по очереди. Параллельно VK отвечал на reload_audios
+            // пустотой, и часть треков плейлиста падала без ссылки.
+            workManager.enqueueUniqueWork(QUEUE_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
         }
     }
 
-    fun cancel(track: Track) {
-        workManager.cancelUniqueWork(UNIQUE_PREFIX + track.id)
-    }
+    fun cancel(track: Track) = cancellations.cancel(track.id)
 
     // Итог — одним сообщением, когда очередь опустела: сохранение плейлиста не засыпает экран снекбарами.
     // Первая выборка только запоминается, иначе после перезапуска всплыли бы старые результаты.
@@ -91,7 +93,7 @@ class Mp3ExportRepository @Inject constructor(
             val title = titles[id] ?: "трек"
             when (status) {
                 is ExportStatus.Saved -> batchSaved += title
-                is ExportStatus.Failed -> batchFailed += "«$title»: ${status.message}"
+                is ExportStatus.Failed -> if (status.message != CANCELLED) batchFailed += "«$title»: ${status.message}"
                 else -> Unit
             }
         }
@@ -100,7 +102,9 @@ class Mp3ExportRepository @Inject constructor(
         val message = when {
             batchSaved.size == 1 && batchFailed.isEmpty() -> "Сохранено: ${batchSaved.single()}"
             batchSaved.isEmpty() && batchFailed.size == 1 -> "Не удалось сохранить ${batchFailed.single()}"
-            else -> "Сохранено в MP3: ${batchSaved.size}" + if (batchFailed.isNotEmpty()) ", не удалось: ${batchFailed.size}" else ""
+            // Причину первой неудачи показываем сразу — по одному числу «не удалось: 3» ничего не понять.
+            else -> "Сохранено в MP3: ${batchSaved.size}" +
+                if (batchFailed.isNotEmpty()) ", не удалось: ${batchFailed.size} (${batchFailed.first()})" else ""
         }
         batchSaved.clear()
         batchFailed.clear()
@@ -111,16 +115,18 @@ class Mp3ExportRepository @Inject constructor(
 
     private fun WorkInfo.toStatus(): ExportStatus = when (state) {
         WorkInfo.State.RUNNING -> ExportStatus.Running(progress.getInt(Mp3ExportWorker.KEY_PERCENT, 0))
-        WorkInfo.State.SUCCEEDED -> ExportStatus.Saved(outputData.getString(Mp3ExportWorker.KEY_LOCATION).orEmpty())
+        WorkInfo.State.SUCCEEDED -> outputData.getString(Mp3ExportWorker.KEY_ERROR)?.let(ExportStatus::Failed)
+            ?: ExportStatus.Saved(outputData.getString(Mp3ExportWorker.KEY_LOCATION).orEmpty())
         WorkInfo.State.FAILED -> ExportStatus.Failed(outputData.getString(Mp3ExportWorker.KEY_ERROR) ?: "ошибка")
-        WorkInfo.State.CANCELLED -> ExportStatus.Failed("отменено")
+        WorkInfo.State.CANCELLED -> ExportStatus.Failed(CANCELLED)
         else -> ExportStatus.Queued
     }
 
     private companion object {
         const val TAG = "mp3_export"
         const val TRACK_TAG_PREFIX = "mp3_track:"
-        const val UNIQUE_PREFIX = "mp3_"
+        const val QUEUE_NAME = "mp3_export_queue"
+        const val CANCELLED = "отменено"
         const val BACKOFF_SECONDS = 15L
     }
 }

@@ -100,6 +100,8 @@ class FakeVkAudioRepository @Inject constructor(
         s.playlists.map { it.meta } + s.albums.filter { it.meta.id in s.followedAlbums }.map { it.meta }
     }
 
+    override suspend fun getMyAlbums() = withState { s -> s.albums.filter { it.meta.id in s.followedAlbums }.map { it.meta } }
+
     override suspend fun getUserPlaylists(ownerId: Long) =
         if (ownerId == ME) getMyPlaylists() else withState { s -> s.albums.filter { it.meta.ownerId == ownerId }.map { it.meta } }
 
