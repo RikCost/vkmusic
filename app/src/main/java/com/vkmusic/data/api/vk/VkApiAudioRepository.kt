@@ -66,6 +66,17 @@ class VkApiAudioRepository(
 
     override suspend fun getMyPlaylists(): List<Playlist> = getUserPlaylists(userIdProvider())
 
+    // filters=albums — фильтр официального клиента; альбом от плейлиста отличает main_artists (isAlbum),
+    // поэтому, даже если VK фильтр не учтёт, в результат попадут только альбомы.
+    override suspend fun getMyAlbums(): List<Playlist> {
+        val me = userIdProvider()
+        return client.call(
+            "audio.getPlaylists",
+            VkItems.serializer(PlaylistDto.serializer()),
+            mapOf("owner_id" to me, "count" to 200, "filters" to "albums"),
+        ).items.map { it.toPlaylist(me) }.filter { it.isAlbum }
+    }
+
     override suspend fun getUserPlaylists(ownerId: Long): List<Playlist> {
         val me = userIdProvider()
         return client.call(

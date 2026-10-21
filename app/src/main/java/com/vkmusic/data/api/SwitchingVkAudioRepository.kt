@@ -24,6 +24,7 @@ class SwitchingVkAudioRepository @Inject constructor(
     override suspend fun addAudio(track: Track) = impl().addAudio(track)
     override suspend fun deleteAudio(track: Track) = impl().deleteAudio(track)
     override suspend fun getMyPlaylists() = impl().getMyPlaylists()
+    override suspend fun getMyAlbums() = impl().getMyAlbums()
     override suspend fun getUserPlaylists(ownerId: Long) = impl().getUserPlaylists(ownerId)
     override suspend fun getPlaylist(ownerId: Long, playlistId: Long, accessKey: String?) =
         impl().getPlaylist(ownerId, playlistId, accessKey)

@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -51,9 +52,14 @@ class Mp3Exporter @Inject constructor(
     }
 
     // Ссылки VK протухают, а у веб-треков в списках их нет вовсе — берём свежую перед скачиванием.
+    // reload_audios на частые запросы отвечает пусто (Meridius повторяет его на no_audios) — повторяем с паузой.
     private suspend fun freshUrl(track: Track): String? {
         val candidate = if (track.webHashes != null || track.accessKey != null) track.copy(url = null) else track
-        return trackUrlResolver.resolve(listOf(candidate)).first().url ?: track.url
+        RESOLVE_DELAYS_MS.forEach { pause ->
+            delay(pause)
+            trackUrlResolver.resolve(listOf(candidate)).first().url?.let { return it }
+        }
+        return track.url
     }
 
     private suspend fun downloadHls(playlistUrl: String, onProgress: suspend (Int) -> Unit): Pair<ByteArray, AudioCodec> {
@@ -145,5 +151,6 @@ class Mp3Exporter @Inject constructor(
         const val SEGMENT_CONCURRENCY = 5
         const val SEGMENT_BATCH = 10
         const val DEFAULT_BUFFER = 64 * 1024
+        val RESOLVE_DELAYS_MS = listOf(0L, 3_000L, 8_000L)
     }
 }

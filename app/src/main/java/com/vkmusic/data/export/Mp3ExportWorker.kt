@@ -18,25 +18,33 @@ class Mp3ExportWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val exporter: Mp3Exporter,
     private val json: Json,
+    private val cancellations: Mp3ExportCancellations,
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
         val track = inputData.getString(KEY_TRACK)
             ?.let { runCatching { json.decodeFromString(Track.serializer(), it) }.getOrNull() }
-            ?: return Result.failure(workDataOf(KEY_ERROR to "Повреждённые данные трека"))
+            ?: return failed("Повреждённые данные трека")
+        if (cancellations.consume(track.id)) return failed(CANCELLED)
         return try {
             val location = exporter.export(track, inputData.getString(KEY_FOLDER)) { percent ->
+                // Отмена уже идущего трека: прерываем на ближайшем обновлении прогресса.
+                if (cancellations.consume(track.id)) throw IllegalStateException(CANCELLED)
                 setProgress(workDataOf(KEY_PERCENT to percent))
             }
             Result.success(workDataOf(KEY_LOCATION to location))
         } catch (e: CancellationException) {
             throw e
         } catch (e: java.io.IOException) {
-            if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure(workDataOf(KEY_ERROR to (e.message ?: "Ошибка сети")))
+            if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else failed(e.message ?: "Ошибка сети")
         } catch (e: Exception) {
-            Result.failure(workDataOf(KEY_ERROR to (e.message ?: e.javaClass.simpleName)))
+            failed(e.message ?: e.javaClass.simpleName)
         }
     }
+
+    // Задачи идут цепочкой: настоящий FAILED оборвал бы все следующие треки, поэтому неудача —
+    // это успешное завершение с текстом ошибки (Mp3ExportRepository читает его как Failed).
+    private fun failed(message: String) = Result.success(workDataOf(KEY_ERROR to message))
 
     companion object {
         const val KEY_TRACK = "track"
@@ -45,5 +53,6 @@ class Mp3ExportWorker @AssistedInject constructor(
         const val KEY_LOCATION = "location"
         const val KEY_ERROR = "error"
         private const val MAX_ATTEMPTS = 2
+        private const val CANCELLED = "отменено"
     }
 }

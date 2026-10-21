@@ -18,6 +18,9 @@ interface VkAudioRepository {
     suspend fun deleteAudio(track: Track)
 
     suspend fun getMyPlaylists(): List<Playlist>
+
+    /** Альбомы исполнителей в «моей музыке» (добавленные к себе), без пользовательских плейлистов. */
+    suspend fun getMyAlbums(): List<Playlist>
     suspend fun getUserPlaylists(ownerId: Long): List<Playlist>
     suspend fun getPlaylist(ownerId: Long, playlistId: Long, accessKey: String? = null): Playlist
     suspend fun getPlaylistTracks(ownerId: Long, playlistId: Long, accessKey: String? = null): List<Track>

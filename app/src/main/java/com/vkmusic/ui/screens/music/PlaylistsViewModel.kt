@@ -22,9 +22,11 @@ class PlaylistsViewModel @Inject constructor(
     private val loading = MutableStateFlow(false)
     private val error = MutableStateFlow<String?>(null)
 
+    // Альбомы живут на своей вкладке: здесь только пользовательские плейлисты.
     val state: StateFlow<LoadState<List<Playlist>>> =
-        combine(playlistRepository.playlists, loading, error) { playlists, isLoading, error ->
-            LoadState(playlists, isLoading, error)
+        combine(playlistRepository.playlists, playlistRepository.albums, loading, error) { playlists, albums, isLoading, error ->
+            val albumIds = albums.mapTo(HashSet()) { it.id }
+            LoadState(playlists.filter { !it.isAlbum && it.id !in albumIds }, isLoading, error)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LoadState(emptyList(), isLoading = true))
 
     init {
@@ -39,6 +41,31 @@ class PlaylistsViewModel @Inject constructor(
         viewModelScope.launch {
             loading.value = true
             error.value = runCatching { block() }.exceptionOrNull()?.message
+            loading.value = false
+        }
+    }
+}
+
+@HiltViewModel
+class AlbumsViewModel @Inject constructor(
+    private val playlistRepository: PlaylistRepository,
+) : ViewModel() {
+
+    private val loading = MutableStateFlow(true)
+    private val error = MutableStateFlow<String?>(null)
+
+    val state: StateFlow<LoadState<List<Playlist>>> =
+        combine(playlistRepository.albums, loading, error) { albums, isLoading, error -> LoadState(albums, isLoading, error) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LoadState(emptyList(), isLoading = true))
+
+    init {
+        refresh()
+    }
+
+    fun refresh() {
+        viewModelScope.launch {
+            loading.value = true
+            error.value = runCatching { playlistRepository.refreshAlbums() }.exceptionOrNull()?.message
             loading.value = false
         }
     }
