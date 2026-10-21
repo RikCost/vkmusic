@@ -64,10 +64,12 @@ import com.vkmusic.data.repository.AppSettings
 import com.vkmusic.data.repository.NormalizerSettings
 import com.vkmusic.data.repository.SettingsRepository
 import com.vkmusic.data.export.ExportStorage
+import com.vkmusic.data.repository.DownloadRepository
 import com.vkmusic.data.web.VkWebDiagnostics
 import com.vkmusic.player.audio.EqualizerPresets
 import com.vkmusic.ui.components.AppVersionText
 import com.vkmusic.ui.components.BackTopBar
+import com.vkmusic.ui.components.ConfirmDialog
 import com.vkmusic.ui.components.SectionTitle
 import com.vkmusic.ui.navigation.LocalNavigator
 import com.vkmusic.ui.screens.bottomOnly
@@ -77,6 +79,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -89,7 +92,15 @@ class SettingsViewModel @Inject constructor(
     private val repository: SettingsRepository,
     private val diagnostics: VkWebDiagnostics,
     private val exportStorage: ExportStorage,
+    private val downloadRepository: DownloadRepository,
 ) : ViewModel() {
+
+    /** Сколько офлайн-загрузок и сколько места они занимают (включая недокачанные). */
+    val downloadsSummary: StateFlow<Pair<Int, Long>> = downloadRepository.downloads
+        .map { downloads -> downloads.size to downloads.values.sumOf { it.bytes } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0 to 0L)
+
+    fun removeAllDownloads() = downloadRepository.removeAll()
 
     fun exportFolderName(treeUri: String?): String = exportStorage.displayName(treeUri)
 
@@ -189,6 +200,9 @@ fun SettingsScreen(
                 )
             }
 
+            item { SectionTitle("Загрузки") }
+            item { DownloadsSection(viewModel) }
+
             item { SectionTitle("Сохранение в MP3") }
             item { ExportFolderSection(current.exportTreeUri, viewModel) }
 
@@ -214,6 +228,38 @@ fun SettingsScreen(
             }
         }
     }
+}
+
+@Composable
+private fun DownloadsSection(viewModel: SettingsViewModel) {
+    val (count, bytes) = viewModel.downloadsSummary.collectAsStateWithLifecycle().value
+    var confirm by remember { mutableStateOf(false) }
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            if (count == 0) "Скачанных треков нет" else "Скачано треков: $count • ${formatBytes(bytes)}",
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
+            "Офлайн-копии для прослушивания без сети. Сохранённые в папку MP3-файлы здесь не учитываются и не удаляются.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedButton(onClick = { confirm = true }, enabled = count > 0) { Text("Удалить все загрузки") }
+    }
+    if (confirm) {
+        ConfirmDialog(
+            title = "Удалить все загрузки?",
+            text = "Будут удалены $count треков (${formatBytes(bytes)}). Без сети они перестанут играть; в VK всё останется.",
+            confirm = "Удалить",
+            onConfirm = viewModel::removeAllDownloads,
+            onDismiss = { confirm = false },
+        )
+    }
+}
+
+private fun formatBytes(bytes: Long): String {
+    val megabytes = bytes / (1024.0 * 1024.0)
+    return if (megabytes >= 1024) String.format(Locale.ROOT, "%.1f ГБ", megabytes / 1024) else "${megabytes.roundToInt()} МБ"
 }
 
 @Composable

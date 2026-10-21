@@ -101,6 +101,25 @@ class TrackActionsViewModel @Inject constructor(
 
     fun removeDownload(track: Track) = downloadRepository.remove(track)
 
+    /** Треки, которые ещё нужно скачать: уже скачанные и стоящие в очереди пропускаются. */
+    fun pendingDownloads(tracks: List<Track>): List<Track> = tracks.filter { track ->
+        track.isPlayable && downloads.value[track.id]?.status.let { it == null || it == DownloadStatus.Failed }
+    }
+
+    /** Треки, которые ещё не сохранены в MP3 и не сохраняются сейчас. */
+    fun pendingExports(tracks: List<Track>): List<Track> = tracks.filter { track ->
+        track.isPlayable && exports.value[track.id].let { it == null || it is ExportStatus.Failed }
+    }
+
+    fun notify(message: String) {
+        _messages.trySend(message)
+    }
+
+    fun cancelDownloads() {
+        downloadRepository.cancelActive()
+        _messages.trySend("Загрузки отменены")
+    }
+
     // Скачанный трек играет по сохранённой ссылке из кэша загрузок — без сети и без запроса reload_audios.
     private fun withDownloads(tracks: List<Track>): List<Track> {
         val completed = downloads.value
