@@ -1,6 +1,10 @@
 package com.vkmusic.ui.screens.settings
 
 import android.content.ClipData
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.net.toUri
 import android.content.ClipboardManager
 import android.os.Build
 import androidx.compose.foundation.BorderStroke
@@ -59,6 +63,7 @@ import androidx.lifecycle.viewModelScope
 import com.vkmusic.data.repository.AppSettings
 import com.vkmusic.data.repository.NormalizerSettings
 import com.vkmusic.data.repository.SettingsRepository
+import com.vkmusic.data.export.ExportStorage
 import com.vkmusic.data.web.VkWebDiagnostics
 import com.vkmusic.player.audio.EqualizerPresets
 import com.vkmusic.ui.components.AppVersionText
@@ -83,7 +88,12 @@ import kotlin.math.roundToInt
 class SettingsViewModel @Inject constructor(
     private val repository: SettingsRepository,
     private val diagnostics: VkWebDiagnostics,
+    private val exportStorage: ExportStorage,
 ) : ViewModel() {
+
+    fun exportFolderName(treeUri: String?): String = exportStorage.displayName(treeUri)
+
+    fun setExportFolder(treeUri: String?) = launch { repository.setExportTreeUri(treeUri) }
 
     private val _report = MutableStateFlow<String?>(null)
     val report: StateFlow<String?> = _report.asStateFlow()
@@ -179,6 +189,9 @@ fun SettingsScreen(
                 )
             }
 
+            item { SectionTitle("Сохранение в MP3") }
+            item { ExportFolderSection(current.exportTreeUri, viewModel) }
+
             item { SectionTitle("Диагностика веб-VK") }
             item { DiagnosticsSection(viewModel) }
 
@@ -198,6 +211,40 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExportFolderSection(treeUri: String?, viewModel: SettingsViewModel) {
+    val context = LocalContext.current
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        // Без постоянного разрешения доступ к папке пропадёт после перезапуска.
+        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        runCatching { context.contentResolver.takePersistableUriPermission(uri, flags) }
+        viewModel.setExportFolder(uri.toString())
+    }
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Папка: ${viewModel.exportFolderName(treeUri)}", style = MaterialTheme.typography.bodyLarge)
+        Text(
+            "Сюда сохраняются треки из меню «Сохранить в MP3»; плейлисты — в подпапку со своим названием.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { picker.launch(treeUri?.toUri()) }) { Text("Выбрать папку") }
+            if (treeUri != null) {
+                OutlinedButton(onClick = {
+                    runCatching {
+                        context.contentResolver.releasePersistableUriPermission(
+                            treeUri.toUri(),
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                        )
+                    }
+                    viewModel.setExportFolder(null)
+                }) { Text("По умолчанию") }
             }
         }
     }

@@ -15,6 +15,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -71,6 +72,7 @@ fun VkMusicRoot(viewModel: RootViewModel = hiltViewModel()) {
     val player by viewModel.player.collectAsStateWithLifecycle()
     val current = rootState ?: return
     val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(viewModel) { viewModel.exportEvents.collect { snackbarHostState.showSnackbar(it) } }
 
     VkMusicTheme(themeId = current.settings.themeId) {
         SystemBarsAppearance()
