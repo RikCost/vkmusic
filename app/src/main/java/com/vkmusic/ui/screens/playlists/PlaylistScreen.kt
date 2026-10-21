@@ -17,6 +17,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
+import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.DropdownMenu
@@ -198,6 +199,9 @@ private fun PlaylistHeader(
             }
             IconButton(onClick = { actions.download(tracks) }, enabled = tracks.isNotEmpty()) {
                 Icon(Icons.Rounded.Download, contentDescription = "Скачать плейлист")
+            }
+            IconButton(onClick = { actions.exportMp3(tracks, folder = playlist.title) }, enabled = tracks.isNotEmpty()) {
+                Icon(Icons.Rounded.SaveAlt, contentDescription = "Сохранить плейлист в MP3")
             }
             IconButton(onClick = { context.shareText("${playlist.title}\n${playlist.shareUrl}") }) {
                 Icon(Icons.Rounded.Share, contentDescription = "Поделиться плейлистом")

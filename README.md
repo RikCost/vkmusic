@@ -26,6 +26,9 @@
 - Тексты песен (синхронизированные — с подсветкой строки), страницы исполнителей и сообществ,
   управление плейлистами: редактирование, удаление, подписка, «Поделиться».
 - Офлайн-загрузка треков (`DownloadManager` Media3) и прогресс в уведомлении.
+- Сохранение треков и плейлистов файлами в папку из настроек (SAF; по умолчанию «Музыка/MuVK»):
+  прямой MP3 скачивается как есть, HLS расшифровывается (AES-128) и аудио вынимается из MPEG-TS
+  без перекодирования; теги ID3v2.3 с обложкой. Если VK отдаёт AAC, файл сохраняется как `.aac`.
 - Поиск, рекомендации, альбомы/плейлисты, музыка друзей, создание плейлистов.
 - Демо-режим без аккаунта (`FakeVkAudioRepository`): тот же UI на локальных WAV-файлах.
 - Токен и cookie веб-сессии хранятся в DataStore в виде AES-GCM-шифра, ключ — в AndroidKeyStore (`KeystoreCipher`).
@@ -62,6 +65,8 @@ app/src/main/java/com/vkmusic/
 ├── data/web/           веб-VK как в Meridius: VkWebClient (cookie), VkQrAuth (QR-вход, web_token),
 │                       VkWebAudioRepository (al_audio.php), AudioUrlDecoder, WebAudioParser
 ├── data/api/fake/      демо-репозиторий без сети
+├── data/export/        сохранение файлами: HlsPlaylist, TsAudioExtractor, Id3Writer, ExportStorage,
+│                       Mp3Exporter, Mp3ExportWorker (WorkManager), Mp3ExportRepository
 ├── data/auth/          SessionStore, WebSessionManager (обновление токена), KeystoreCipher
 ├── data/db/            Room: TrackEntity/TrackDao/AppDatabase (кэш «моей музыки»)
 ├── data/repository/    AuthRepository, TrackRepository, DownloadRepository, SettingsRepository

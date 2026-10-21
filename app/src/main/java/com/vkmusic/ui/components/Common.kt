@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -130,6 +131,16 @@ fun RoundPlayButton(onClick: () -> Unit, enabled: Boolean = true, icon: ImageVec
 
 @Composable
 fun PlayAllRow(tracks: List<Track>, actions: TrackActionsViewModel, modifier: Modifier = Modifier) {
+    var confirmExport by rememberSaveable { mutableStateOf(false) }
+    if (confirmExport) {
+        ConfirmDialog(
+            title = "Сохранить ${tracks.size} треков в MP3?",
+            text = "Файлы займут место на устройстве; сохранение идёт в фоне и может занять время.",
+            confirm = "Сохранить",
+            onConfirm = { actions.exportMp3(tracks) },
+            onDismiss = { confirmExport = false },
+        )
+    }
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -143,6 +154,12 @@ fun PlayAllRow(tracks: List<Track>, actions: TrackActionsViewModel, modifier: Mo
         }
         IconButton(onClick = { actions.download(tracks) }, enabled = tracks.isNotEmpty()) {
             Icon(Icons.Rounded.Download, contentDescription = "Скачать все")
+        }
+        IconButton(
+            onClick = { if (tracks.size > CONFIRM_EXPORT_OVER) confirmExport = true else actions.exportMp3(tracks) },
+            enabled = tracks.isNotEmpty(),
+        ) {
+            Icon(Icons.Rounded.SaveAlt, contentDescription = "Сохранить все в MP3")
         }
         Text(
             "${tracks.size} треков",
@@ -333,3 +350,5 @@ fun SecondaryIconButton(icon: ImageVector, description: String, onClick: () -> U
         Icon(icon, contentDescription = description)
     }
 }
+
+private const val CONFIRM_EXPORT_OVER = 20

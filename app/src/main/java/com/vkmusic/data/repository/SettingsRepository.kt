@@ -40,6 +40,8 @@ data class AppSettings(
     val playLatestOnStart: Boolean = false,
     val playbackSpeed: Float = 1f,
     val mixOptions: Map<String, List<String>> = emptyMap(),
+    // Папка для MP3 — URI дерева SAF; null — «Музыка/MuVK» по умолчанию.
+    val exportTreeUri: String? = null,
 ) {
     companion object {
         const val DEFAULT_THEME = "classic"
@@ -73,6 +75,7 @@ class SettingsRepository @Inject constructor(
             playbackSpeed = prefs[Keys.SPEED] ?: 1f,
             mixOptions = prefs[Keys.MIX_OPTIONS]?.let { runCatching { json.decodeFromString(mixSerializer, it) }.getOrNull() }
                 .orEmpty(),
+            exportTreeUri = prefs[Keys.EXPORT_TREE],
         )
     }.distinctUntilChanged()
 
@@ -105,6 +108,10 @@ class SettingsRepository @Inject constructor(
         it[Keys.MIX_OPTIONS] = json.encodeToString(mixSerializer, value)
     }
 
+    suspend fun setExportTreeUri(value: String?) = dataStore.edit {
+        if (value == null) it.remove(Keys.EXPORT_TREE) else it[Keys.EXPORT_TREE] = value
+    }
+
     private fun parseLevels(raw: String): List<Float>? =
         raw.split(',').mapNotNull { it.toFloatOrNull() }.takeIf { it.size == EqualizerPresets.frequencies.size }
 
@@ -122,5 +129,6 @@ class SettingsRepository @Inject constructor(
         val PLAY_LATEST = booleanPreferencesKey("play_latest_on_start")
         val SPEED = floatPreferencesKey("playback_speed")
         val MIX_OPTIONS = stringPreferencesKey("mix_options")
+        val EXPORT_TREE = stringPreferencesKey("export_tree_uri")
     }
 }

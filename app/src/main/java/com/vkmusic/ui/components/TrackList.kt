@@ -22,7 +22,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
@@ -32,6 +34,7 @@ import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Radar
+import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -64,6 +67,7 @@ import androidx.media3.common.Player
 import androidx.media3.ui.compose.state.rememberCurrentMediaItemState
 import com.vkmusic.data.model.Playlist
 import com.vkmusic.data.model.Track
+import com.vkmusic.data.export.ExportStatus
 import com.vkmusic.data.repository.DownloadStatus
 import com.vkmusic.ui.LocalSnackbarHostState
 import com.vkmusic.ui.formatDuration
@@ -134,7 +138,9 @@ fun TrackRow(
     extraMenu: (@Composable (close: () -> Unit) -> Unit)? = null,
 ) {
     val downloads by actions.downloads.collectAsStateWithLifecycle()
+    val exports by actions.exports.collectAsStateWithLifecycle()
     val status = downloads[track.id]?.status
+    val export = exports[track.id]
     // Колонка «Альбом» как в таблице Meridius — только там, где хватает ширины.
     val wide = LocalConfiguration.current.screenWidthDp >= WIDE_LAYOUT_DP
     val colors = MaterialTheme.colorScheme
@@ -166,6 +172,7 @@ fun TrackRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (track.isExplicit) ExplicitBadge()
                 DownloadBadge(status)
+                ExportBadge(export)
                 Text(
                     track.artist,
                     style = MaterialTheme.typography.bodySmall,
@@ -187,7 +194,7 @@ fun TrackRow(
             )
         }
         Text(formatDuration(track.durationSec * 1000L), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
-        TrackMenuButton(track, status, actions, extraMenu)
+        TrackMenuButton(track, status, export, actions, extraMenu)
     }
 }
 
@@ -195,6 +202,7 @@ fun TrackRow(
 private fun TrackMenuButton(
     track: Track,
     status: DownloadStatus?,
+    export: ExportStatus?,
     actions: TrackActionsViewModel,
     extraMenu: (@Composable (close: () -> Unit) -> Unit)?,
 ) {
@@ -229,6 +237,11 @@ private fun TrackMenuButton(
                 MenuAction("Перейти к исполнителю", Icons.Rounded.Person, closing { navigator.openArtist(artistId, track.artist) })
             }
             MenuAction("Поделиться", Icons.Rounded.Share, closing { context.shareText("${track.artist} — ${track.title}\n${track.shareUrl}") })
+            if (export is ExportStatus.Queued || export is ExportStatus.Running) {
+                MenuAction("Отменить сохранение MP3", Icons.Rounded.Close, closing { actions.cancelExport(track) })
+            } else {
+                MenuAction("Сохранить в MP3", Icons.Rounded.SaveAlt, closing { actions.exportMp3(listOf(track)) })
+            }
             if (status == null || status == DownloadStatus.Failed) {
                 MenuAction("Скачать аудиозапись", Icons.Rounded.Download, closing { actions.download(listOf(track)) })
             } else {
@@ -269,6 +282,19 @@ private fun ExplicitBadge() {
     ) {
         Text("E", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.background)
     }
+}
+
+// Сохранение файлом: идёт — кольцо прогресса, готово — значок файла.
+@Composable
+private fun ExportBadge(status: ExportStatus?) {
+    val modifier = Modifier.size(14.dp)
+    when (status) {
+        null, is ExportStatus.Failed -> return
+        ExportStatus.Queued -> CircularProgressIndicator(modifier, strokeWidth = 2.dp, color = MaterialTheme.colorScheme.tertiary)
+        is ExportStatus.Running -> CircularProgressIndicator({ status.percent / 100f }, modifier, strokeWidth = 2.dp, color = MaterialTheme.colorScheme.tertiary)
+        is ExportStatus.Saved -> Icon(Icons.Rounded.AudioFile, contentDescription = "Сохранено в MP3", modifier = modifier, tint = MaterialTheme.colorScheme.primary)
+    }
+    Box(Modifier.size(4.dp))
 }
 
 @Composable

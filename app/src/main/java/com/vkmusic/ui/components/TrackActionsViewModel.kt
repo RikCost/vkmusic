@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.vkmusic.data.api.VkAudioRepository
 import com.vkmusic.data.model.Playlist
 import com.vkmusic.data.model.Track
+import com.vkmusic.data.export.ExportStatus
+import com.vkmusic.data.export.Mp3ExportRepository
 import com.vkmusic.data.repository.DownloadRepository
 import com.vkmusic.data.repository.DownloadStatus
 import com.vkmusic.data.repository.LibraryIndex
@@ -30,7 +32,24 @@ class TrackActionsViewModel @Inject constructor(
     private val playlistRepository: PlaylistRepository,
     private val downloadRepository: DownloadRepository,
     private val playerConnection: PlayerConnection,
+    private val mp3ExportRepository: Mp3ExportRepository,
 ) : ViewModel() {
+
+    val exports: StateFlow<Map<String, ExportStatus>> = mp3ExportRepository.statuses
+
+    fun cancelExport(track: Track) = mp3ExportRepository.cancel(track)
+
+    /** Сохранить треки файлами в папку из настроек; [folder] — подпапка (название плейлиста). */
+    fun exportMp3(tracks: List<Track>, folder: String? = null) {
+        val playable = tracks.filter { it.isPlayable }
+        if (playable.isEmpty()) {
+            _messages.trySend("Этот трек нельзя сохранить")
+            return
+        }
+        mp3ExportRepository.enqueue(playable, folder)
+        _messages.trySend(if (playable.size == 1) "Сохранение в MP3 начато" else "Сохранение ${playable.size} треков в MP3 начато")
+    }
+
 
     val player = playerConnection.player
 
