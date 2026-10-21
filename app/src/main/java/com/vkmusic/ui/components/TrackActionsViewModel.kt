@@ -6,6 +6,7 @@ import com.vkmusic.data.api.VkAudioRepository
 import com.vkmusic.data.model.Playlist
 import com.vkmusic.data.model.Track
 import com.vkmusic.data.repository.DownloadRepository
+import com.vkmusic.data.repository.DownloadStatus
 import com.vkmusic.data.repository.LibraryIndex
 import com.vkmusic.data.repository.PlaylistRepository
 import com.vkmusic.data.repository.TrackDownload
@@ -49,12 +50,12 @@ class TrackActionsViewModel @Inject constructor(
 
     fun loadPlaylists() = launchReporting(null) { playlistRepository.refresh() }
 
-    fun play(tracks: List<Track>, index: Int) = playerConnection.playQueue(tracks, index)
+    fun play(tracks: List<Track>, index: Int) = playerConnection.playQueue(withDownloads(tracks), index)
 
-    fun shuffle(tracks: List<Track>) = playerConnection.playQueue(tracks, shuffle = true)
+    fun shuffle(tracks: List<Track>) = playerConnection.playQueue(withDownloads(tracks), shuffle = true)
 
     fun playNext(track: Track) {
-        val exact = playerConnection.playNext(track)
+        val exact = playerConnection.playNext(withDownloads(listOf(track)).first())
         _messages.trySend(if (exact) "Будет воспроизведено следующим" else "Добавлено в очередь (включено перемешивание)")
     }
 
@@ -80,6 +81,14 @@ class TrackActionsViewModel @Inject constructor(
     }
 
     fun removeDownload(track: Track) = downloadRepository.remove(track)
+
+    // Скачанный трек играет по сохранённой ссылке из кэша загрузок — без сети и без запроса reload_audios.
+    private fun withDownloads(tracks: List<Track>): List<Track> {
+        val completed = downloads.value
+        return tracks.map { track ->
+            completed[track.id]?.takeIf { it.status == DownloadStatus.Completed }?.track?.takeIf { it.url != null } ?: track
+        }
+    }
 
     private fun launchReporting(success: String?, block: suspend () -> Unit) {
         viewModelScope.launch {

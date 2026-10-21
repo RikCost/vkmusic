@@ -9,7 +9,9 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -24,6 +26,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.vkmusic.MainActivity
 import com.vkmusic.R
 import com.vkmusic.data.repository.SettingsRepository
+import com.vkmusic.data.repository.TrackUrlResolver
 import com.vkmusic.di.ApplicationScope
 import com.vkmusic.player.audio.AudioEffects
 import com.vkmusic.player.audio.EqualizerAudioProcessor
@@ -31,6 +34,7 @@ import com.vkmusic.player.audio.LoudnessNormalizerAudioProcessor
 import com.vkmusic.player.queue.QueueExtender
 import com.vkmusic.player.queue.QueueStore
 import com.vkmusic.player.queue.SavedQueue
+import com.vkmusic.player.queue.needsUrl
 import com.vkmusic.player.queue.toMediaItem
 import com.vkmusic.player.queue.toTrack
 import com.vkmusic.player.queue.withResolvedUri
@@ -51,12 +55,14 @@ class PlaybackService : MediaSessionService() {
     @Inject lateinit var queueExtender: QueueExtender
     @Inject lateinit var queueStore: QueueStore
     @Inject @field:ApplicationScope lateinit var appScope: CoroutineScope
+    @Inject lateinit var trackUrlResolver: TrackUrlResolver
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var mediaSession: MediaSession? = null
     private var rewindToStart = true
     private var saveLatest = true
     private var extending = false
+    private val resolving = mutableSetOf<String>()
 
     override fun onCreate() {
         super.onCreate()
@@ -130,12 +136,49 @@ class PlaybackService : MediaSessionService() {
 
     private inner class QueueListener(private val player: Player) : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            resolveAhead(player)
             extendQueueIfNeeded(player)
             saveQueue(player)
         }
 
+        override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+            resolveAhead(player)
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            if (player.currentMediaItem?.needsUrl == true) resolveAhead(player)
+        }
+
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (!isPlaying) saveQueue(player)
+        }
+    }
+
+    // Веб-VK: ссылка трека получается по хешам, когда до него доходит очередь (текущий и пара следующих).
+    private fun resolveAhead(player: Player) {
+        if (player.mediaItemCount == 0) return
+        val timeline = player.currentTimeline
+        val indices = mutableListOf<Int>()
+        var index = player.currentMediaItemIndex
+        while (index != C.INDEX_UNSET && index < player.mediaItemCount && indices.size < RESOLVE_AHEAD) {
+            indices += index
+            index = if (timeline.isEmpty) C.INDEX_UNSET else timeline.getNextWindowIndex(index, Player.REPEAT_MODE_OFF, player.shuffleModeEnabled)
+        }
+        val pending = indices.map(player::getMediaItemAt).filter { it.needsUrl && it.mediaId !in resolving }.mapNotNull { it.toTrack() }
+        if (pending.isEmpty()) return
+        resolving += pending.map { it.id }
+        scope.launch {
+            val resolved = trackUrlResolver.resolve(pending).filter { it.url != null }
+            resolving -= pending.map { it.id }.toSet()
+            for (track in resolved) {
+                val position = (0 until player.mediaItemCount).firstOrNull {
+                    val item = player.getMediaItemAt(it)
+                    item.mediaId == track.id && item.needsUrl
+                } ?: continue
+                val failedHere = position == player.currentMediaItemIndex && player.playerError != null
+                player.replaceMediaItem(position, track.toMediaItem())
+                if (failedHere) player.prepare()
+            }
         }
     }
 
@@ -146,7 +189,7 @@ class PlaybackService : MediaSessionService() {
         scope.launch {
             val known = (0 until player.mediaItemCount).mapTo(HashSet()) { player.getMediaItemAt(it).mediaId }
             val more = runCatching { source() }.getOrDefault(emptyList())
-                .filter { it.url != null && it.id !in known }
+                .filter { it.isPlayable && it.id !in known }
                 .distinctBy { it.id }
             if (queueExtender.source === source && more.isNotEmpty()) player.addMediaItems(more.map { it.toMediaItem() })
             extending = false
@@ -191,5 +234,6 @@ class PlaybackService : MediaSessionService() {
         // Meridius подгружает микс по 3 трека; здесь — когда до конца очереди осталось столько же.
         const val EXTEND_THRESHOLD = 2
         const val SAVED_QUEUE_LIMIT = 500
+        const val RESOLVE_AHEAD = 3
     }
 }

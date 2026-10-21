@@ -38,13 +38,49 @@
 | Очередь «Сейчас играет» | `QUEUE.NOW_PLAYING`, скриншоты | лист очереди в плеере |
 | Страница исполнителя: «Популярное», «Плейлисты» | `ARTIST_PAGE` | экран исполнителя |
 
-## Inferred (в Meridius не видно, взято из официального клиента/документации VK)
+## Вход и веб-API музыки (seen, meridius-core `HTTPClient`, `AudioRequests`, `PlaylistsRequest`)
 
-Meridius получает тексты песен и страницы исполнителей скрейпингом веб-версии (`al_audio.php`,
-`act=get_lyrics`) по cookie-сессии — на Android такой сессии нет. Поэтому здесь официальные методы:
-`audio.getLyrics(audio_id)`, `audio.getAudiosByArtist`, `audio.getAlbumsByArtist`, `groups.get`,
-`audio.getPlaylistById`, `audio.editPlaylist`, `audio.deletePlaylist`, `audio.followPlaylist`, `audio.getById`.
-Если какой-то из них VK вернёт с ошибкой, экран покажет её текст.
+Вход в Meridius — только QR-код VK ID, без пароля:
+
+1. `GET id.vk.ru/auth` с `configuration.auth.pageParams` (`action`=base64 `{"name":"qr_auth",…}`,
+   `response_type=silent_token`, `app_id=7913379`, случайный `uuid` из 6 букв) → из HTML берётся `window.init`
+   (`auth.host_app_id`, `auth.anonymous_token`).
+2. `POST api.vk.ru/method/auth.getAuthCode?v=5.258&client_id=<host_app_id>` → `auth_hash`, `auth_url` (в QR),
+   `expires_in` (unix-время). Заголовки: Firefox UA, `Origin/Referer: https://id.vk.ru`.
+3. Каждые 3 с `auth.checkAuthCode` (`auth_hash`, `web_auth=1`): 0 — ждём, 5 — нужен код из приложения
+   (`auth.validateAuthCode`), 2 — готово, есть `super_app_token`.
+4. `POST login.vk.ru/?act=connect_code_auth` (`token`, `uuid`, `app_id`, `oauth_response_type=silent_token`,
+   `to`=base64 `https://vk.ru/`, `version=1`) → переход на `data.next_step_url` ставит cookie vk.ru.
+5. `POST login.vk.ru/?act=web_token` (`version=1`, `app_id=6287487`) по cookie → `access_token`; обновляется
+   каждые 300 с (`webTokenRefreshTimeout`).
+
+Музыка — `POST vk.ru/al_audio.php` по cookie, ответ `{"payload":[code,[...]]}`:
+музыка владельца — плейлист `playlist_id=-1` через `load_section type=playlist` (так в Meridius заведена
+«Моя музыка»), запасной путь — `act=section` (`all`) с продолжением `load_catalog_section` по `next_from`;
+поиск — `act=section section=search`, треки из `playlists[0].list` с продолжением по `playlist.nextOffset` (как `queryExtended`); в Android-версии это запасной путь, основной — официальный `audio.search` с web-токеном (веб-выдача давала неполный и нерелевантный список); `reload_audios` (ссылки по `owner_id_id_actionHash_urlHash`, пачками по 10), `owner_playlists`,
+`load_section type=playlist`, `save_playlist` (хеш `newPlaylistHash` со страницы), `delete_playlist`,
+`follow_playlist`, `more_playlists_add` + `save_audio_in_playlists`, `add`, `delete_audio`, `get_lyrics`.
+Аудио — массив, индексы полей из `Static.AudioObject`; ссылки замаскированы (`audio_api_unavailable`),
+маска снимается `ExposeSource` ([AudioUrlDecoder.kt](../app/src/main/java/com/vkmusic/data/web/AudioUrlDecoder.kt)).
+Официальный API с web-токеном Meridius использует для VK Микса (и проверяет, доступен ли с ним `audio.get`).
+
+Отличия Android-версии: ссылки получаются не на весь список сразу, а для текущего и двух следующих
+треков очереди; на телефоне QR можно подтвердить кнопкой «Подтвердить в приложении VK» (открывает
+`auth_url`); дополнительно есть вход через WebView (страница vk.ru → cookie → тот же `web_token`).
+Профиль, друзья, сообщества, исполнители, похожие и рекомендации идут через официальный API с web-токеном —
+Meridius разбирает для них HTML-страницы, это не переносилось.
+
+## Inferred (в Meridius не видно)
+
+- Резервные официальные методы с web-токеном: `audio.getLyrics` (если веб `get_lyrics` пуст),
+  `audio.getAudiosByArtist`, `audio.getAlbumsByArtist`, `audio.getRecommendations`, `audio.searchAlbums`,
+  `groups.get`, `friends.get`, `users.get`. Работает ли с web-токеном каждый из них — не проверено
+  (Meridius сам проверяет только `audio.get`); при ошибке экран покажет её текст.
+- Поля плейлиста в `owner_playlists`/`load_section` разбираются по именам из `getPlaylistInfo`
+  (`id`/`playlist_id`, `ownerId`, `accessHash`, `editHash`, `followHash`, `isFollowed`, `listens`, `size`…);
+  поле автора (`authorName`) и поле `begin` в таймкодах текста — предположение.
+- Вход через WebView считается успешным, когда `web_token` отвечает `okay` по cookie страницы vk.ru.
+- Ссылка из QR (`auth_url`) открывается приложением VK на том же телефоне — не проверено.
 
 ## Не перенесено (только десктоп)
 

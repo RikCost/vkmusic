@@ -21,6 +21,7 @@ data class TrackEntity(
     val hasLyrics: Boolean = false,
     val artistId: String? = null,
     val accessKey: String? = null,
+    val webHashes: String? = null,
 )
 
 fun TrackEntity.toTrack() = Track(
@@ -37,6 +38,7 @@ fun TrackEntity.toTrack() = Track(
     hasLyrics = hasLyrics,
     artistId = artistId,
     accessKey = accessKey,
+    webHashes = webHashes,
 )
 
 fun Track.toEntity(position: Int) = TrackEntity(
@@ -55,4 +57,5 @@ fun Track.toEntity(position: Int) = TrackEntity(
     hasLyrics = hasLyrics,
     artistId = artistId,
     accessKey = accessKey,
+    webHashes = webHashes,
 )

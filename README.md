@@ -6,14 +6,17 @@
 [docs/meridius-port.md](docs/meridius-port.md). Аккаунт можно не использовать — есть демо-режим на
 локальных данных.
 
-- Package: `com.vkmusic`, версия 0.3.0
+- Package: `com.vkmusic`, версия 0.4.0
 - Минимум Android 8.0 (`minSdk 26`), собран против SDK 36 (`targetSdk 36`)
 - UI полностью на русском, строки захардкожены в Compose
 
 ## Возможности
 
-- Вход по логину и паролю через VK ID (экосистемный OAuth на `api.vk.ru`), включая 2FA
-  (код на почту / по SMS / в push) и капчу — подробности в [docs/vk-auth.md](docs/vk-auth.md).
+- Вход как в Meridius: QR-код VK ID с подтверждением в приложении VK (и кодом, если VK попросит);
+  дополнительно — вход на странице VK во встроенном браузере (WebView). Дальше работает
+  веб-сессия vk.ru по cookie, токен API выдаёт `login.vk.ru/?act=web_token` и обновляется раз в 5 минут.
+- Музыка через веб-API VK (`al_audio.php`), как в Meridius: списки, плейлисты, поиск, тексты;
+  ссылки на треки получаются лениво (`reload_audios`) перед воспроизведением и скачиванием.
 - Плеер на Media3 ExoPlayer: `MediaSessionService`, очередь «Сейчас играет», скорость,
   «перемотка в начало трека», восстановление очереди после перезапуска.
 - Звук как в Meridius: 18-полосный эквалайзер с 26 пресетами и нормализация громкости по LUFS —
@@ -25,7 +28,7 @@
 - Офлайн-загрузка треков (`DownloadManager` Media3) и прогресс в уведомлении.
 - Поиск, рекомендации, альбомы/плейлисты, музыка друзей, создание плейлистов.
 - Демо-режим без аккаунта (`FakeVkAudioRepository`): тот же UI на локальных WAV-файлах.
-- Токен хранится в DataStore в виде AES-GCM-шифра, ключ — в AndroidKeyStore (`KeystoreCipher`).
+- Токен и cookie веб-сессии хранятся в DataStore в виде AES-GCM-шифра, ключ — в AndroidKeyStore (`KeystoreCipher`).
 
 ## Требования
 
@@ -37,18 +40,8 @@ JDK 21, Android SDK 36 (platform-tools + build-tools), Gradle берётся и�
 cp local.properties.sample local.properties
 ```
 
-и заполнить три значения:
-
-| Ключ | Что туда |
-|---|---|
-| `sdk.dir` | путь к Android SDK на вашей машине |
-| `vk.clientId` | `client_id`/`api_id` эталонного Android-клиента VK |
-| `vk.clientSecret` | его `client_secret` |
-
-`local.properties` в `.gitignore`, ключи в историю не попадают. Значения `vk.clientId` /
-`vk.clientSecret` — реквизиты официального клиента, извлечённые из его APK (не нашего приложения);
-обоснование и следствия — в [docs/vk-auth.md](docs/vk-auth.md). Если их не указать, приложение
-соберётся и будет работать в демо-режиме, но вход по паролю недоступен (`VkIdConfig.isConfigured`).
+и указать `sdk.dir` — путь к Android SDK. Ключей приложения VK не нужно: вход идёт через веб-VK ID,
+как в Meridius (подробности — в [docs/meridius-port.md](docs/meridius-port.md)).
 
 ## Сборка
 
@@ -64,10 +57,12 @@ Gradle-кэш и SDK можно переопределить переменны�
 
 ```
 app/src/main/java/com/vkmusic/
-├── data/api/vk/        транспорт и DTO VK: VkApiClient (api.vk.com, audio.*),
-│                       VkAuthApi (api.vk.ru, VK ID), VkHeadersInterceptor (UA + X-VK-Android-Client)
+├── data/api/vk/        официальный API с web-токеном: VkApiClient, VkApiAudioRepository (микс, друзья,
+│                       сообщества, исполнители), VkHeadersInterceptor (UA + X-VK-Android-Client)
+├── data/web/           веб-VK как в Meridius: VkWebClient (cookie), VkQrAuth (QR-вход, web_token),
+│                       VkWebAudioRepository (al_audio.php), AudioUrlDecoder, WebAudioParser
 ├── data/api/fake/      демо-репозиторий без сети
-├── data/auth/          SessionStore + KeystoreCipher (шифрование токена)
+├── data/auth/          SessionStore, WebSessionManager (обновление токена), KeystoreCipher
 ├── data/db/            Room: TrackEntity/TrackDao/AppDatabase (кэш «моей музыки»)
 ├── data/repository/    AuthRepository, TrackRepository, DownloadRepository, SettingsRepository
 ├── di/                 Hilt-модули: NetworkModule, MediaModule (SimpleCache, ExoPlayer, DownloadManager)

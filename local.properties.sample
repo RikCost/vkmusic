@@ -1,8 +1,3 @@
-# Скопируйте в local.properties и заполните своими значениями.
-# local.properties в .gitignore — реальные ключи в репозиторий не попадут.
+# Скопируйте в local.properties и укажите путь к Android SDK.
+# local.properties в .gitignore — в репозиторий не попадает.
 sdk.dir=D\:/Repository/Anime/.android-sdk
-
-# Реквизиты эталонного Android-клиента VK ID (извлечены из его APK, см. docs/vk-auth.md).
-# Без них вход по паролю недоступен и приложение работает только в демо-режиме.
-vk.clientId=
-vk.clientSecret=

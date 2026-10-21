@@ -15,6 +15,10 @@ data class Playlist(
     val updatedAt: Long = 0,
     // Подписка на чужой плейлист хранится у VK копией в «моих» плейлистах: удалять нужно именно её.
     val followCopyId: Long? = null,
+    // Веб-VK: хеш редактирования (свой плейлист) и хеш подписки (follow_playlist переключает подписку).
+    val editHash: String? = null,
+    val followHash: String? = null,
+    val isFollowed: Boolean = false,
 ) {
     val id: String get() = "${ownerId}_$playlistId"
 
