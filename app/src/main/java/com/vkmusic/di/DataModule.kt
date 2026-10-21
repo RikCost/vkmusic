@@ -22,7 +22,10 @@ object DataModule {
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
-        Room.databaseBuilder(context, AppDatabase::class.java, "vkmusic.db").build()
+        // Таблица — только кэш «моей музыки», он перезагружается из VK: миграция не нужна.
+        Room.databaseBuilder(context, AppDatabase::class.java, "vkmusic.db")
+            .fallbackToDestructiveMigration(dropAllTables = true)
+            .build()
 
     @Provides
     fun provideTrackDao(db: AppDatabase): TrackDao = db.trackDao()

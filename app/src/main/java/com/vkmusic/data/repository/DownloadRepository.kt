@@ -35,7 +35,7 @@ sealed interface DownloadStatus {
     data object Failed : DownloadStatus
 }
 
-data class TrackDownload(val track: Track, val status: DownloadStatus, val updatedAt: Long)
+data class TrackDownload(val track: Track, val status: DownloadStatus, val updatedAt: Long, val bytes: Long = 0)
 
 @OptIn(UnstableApi::class)
 @Singleton
@@ -44,6 +44,7 @@ class DownloadRepository @Inject constructor(
     private val downloadManager: DownloadManager,
     private val json: Json,
     @param:ApplicationScope private val scope: CoroutineScope,
+    private val trackUrlResolver: TrackUrlResolver,
 ) {
     private val _downloads = MutableStateFlow<Map<String, TrackDownload>>(emptyMap())
     val downloads: StateFlow<Map<String, TrackDownload>> = _downloads.asStateFlow()
@@ -75,7 +76,14 @@ class DownloadRepository @Inject constructor(
     }
 
     fun download(tracks: List<Track>) {
-        tracks.filter { it.url != null && _downloads.value[it.id]?.status.let { s -> s == null || s == DownloadStatus.Failed } }.forEach { track ->
+        val candidates = tracks.filter { it.isPlayable && _downloads.value[it.id]?.status.let { s -> s == null || s == DownloadStatus.Failed } }
+        if (candidates.isEmpty()) return
+        // Веб-трекам ссылку нужно получить по хешам прямо перед скачиванием.
+        scope.launch(Dispatchers.Main.immediate) { enqueue(trackUrlResolver.resolve(candidates)) }
+    }
+
+    private fun enqueue(tracks: List<Track>) {
+        tracks.filter { it.url != null }.forEach { track ->
             val request = DownloadRequest.Builder(track.id, track.url!!.toUri())
                 .setCustomCacheKey(if (track.isHls) null else track.id)
                 .setMimeType(if (track.isHls) MimeTypes.APPLICATION_M3U8 else null)
@@ -87,6 +95,18 @@ class DownloadRepository @Inject constructor(
 
     fun remove(track: Track) {
         DownloadService.sendRemoveDownload(context, MusicDownloadService::class.java, track.id, false)
+    }
+
+    /** Отменить всё, что ещё в очереди или качается; готовые загрузки остаются. */
+    fun cancelActive() {
+        _downloads.value.values
+            .filter { it.status == DownloadStatus.Queued || it.status is DownloadStatus.Downloading }
+            .forEach { remove(it.track) }
+    }
+
+    /** Удалить все офлайн-загрузки из хранилища приложения (сохранённые MP3 в папке не трогаются). */
+    fun removeAll() {
+        DownloadService.sendRemoveAllDownloads(context, MusicDownloadService::class.java, false)
     }
 
     private fun put(download: Download) {
@@ -116,7 +136,7 @@ class DownloadRepository @Inject constructor(
             Download.STATE_DOWNLOADING -> DownloadStatus.Downloading(percentDownloaded.coerceAtLeast(0f))
             else -> DownloadStatus.Queued
         }
-        return TrackDownload(track, status, updateTimeMs)
+        return TrackDownload(track, status, updateTimeMs, bytesDownloaded)
     }
 
     private companion object {

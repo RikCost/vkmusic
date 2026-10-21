@@ -16,6 +16,12 @@ data class TrackEntity(
     val coverUrl: String?,
     val isHls: Boolean,
     val position: Int,
+    val albumTitle: String? = null,
+    val isExplicit: Boolean = false,
+    val hasLyrics: Boolean = false,
+    val artistId: String? = null,
+    val accessKey: String? = null,
+    val webHashes: String? = null,
 )
 
 fun TrackEntity.toTrack() = Track(
@@ -27,6 +33,12 @@ fun TrackEntity.toTrack() = Track(
     url = url,
     coverUrl = coverUrl,
     isHls = isHls,
+    albumTitle = albumTitle,
+    isExplicit = isExplicit,
+    hasLyrics = hasLyrics,
+    artistId = artistId,
+    accessKey = accessKey,
+    webHashes = webHashes,
 )
 
 fun Track.toEntity(position: Int) = TrackEntity(
@@ -40,4 +52,10 @@ fun Track.toEntity(position: Int) = TrackEntity(
     coverUrl = coverUrl,
     isHls = isHls,
     position = position,
+    albumTitle = albumTitle,
+    isExplicit = isExplicit,
+    hasLyrics = hasLyrics,
+    artistId = artistId,
+    accessKey = accessKey,
+    webHashes = webHashes,
 )

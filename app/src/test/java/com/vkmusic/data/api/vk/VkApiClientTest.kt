@@ -24,7 +24,7 @@ class VkApiClientTest {
     fun setUp() {
         server.start()
         val client = VkApiClient(OkHttpClient(), json, tokenProvider = { "test-token" }, apiUrl = server.url("/method/"))
-        repository = VkApiAudioRepository(client) { 42L }
+        repository = VkApiAudioRepository(client, json) { 42L }
     }
 
     @After
@@ -135,5 +135,96 @@ class VkApiClientTest {
             assertTrue(e.isAuthError)
         }
         assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `vk mix sends meridius parameters and resolves missing urls`() = runTest {
+        server.enqueue(
+            MockResponse.Builder().body(
+                """
+                {"response":[
+                  {"id":1,"owner_id":5,"artist":"A","title":"With url","duration":10,"url":"https://cs1/a.mp3","is_explicit":true},
+                  {"id":2,"owner_id":5,"artist":"B","title":"No url","duration":20,"access_key":"key2","has_lyrics":1}
+                ]}
+                """.trimIndent(),
+            ).build(),
+        )
+        server.enqueue(
+            MockResponse.Builder().body(
+                """{"response":[{"id":2,"owner_id":5,"artist":"B","title":"No url","duration":20,"url":"https://cs1/b.mp3"}]}""",
+            ).build(),
+        )
+
+        val tracks = repository.getMix("common", null, mapOf("moods" to listOf("happy", "calm"), "langs" to emptyList()), 3)
+
+        val mixBody = requireNotNull(server.takeRequest().body).utf8()
+        assertTrue(mixBody.contains("mix_id=common"))
+        assertTrue(mixBody.contains("count=3"))
+        assertTrue(mixBody.contains("v=5.285"))
+        assertFalse(mixBody.contains("entity_id"))
+        val options = java.net.URLDecoder.decode(mixBody.substringAfter("options=").substringBefore("&"), "UTF-8")
+        assertEquals("""{"moods":["happy","calm"]}""", options)
+        val byIdRequest = server.takeRequest()
+        assertEquals("/method/audio.getById", byIdRequest.url.encodedPath)
+        assertTrue(requireNotNull(byIdRequest.body).utf8().contains("audios=5_2_key2"))
+        assertEquals(listOf("https://cs1/a.mp3", "https://cs1/b.mp3"), tracks.map { it.url })
+        assertTrue(tracks[0].isExplicit)
+    }
+
+    @Test
+    fun `mix settings are read from settings mix_categories`() = runTest {
+        server.enqueue(
+            MockResponse.Builder().body(
+                """
+                {"response":{"settings":{"mix_categories":[
+                  {"id":"moods","title":"Настроение","options":[{"id":"happy","title":"Радостно"},{"id":"sad"}]}
+                ]}}}
+                """.trimIndent(),
+            ).build(),
+        )
+
+        val categories = repository.getMixSettings()
+
+        assertEquals(1, categories.size)
+        assertEquals("Настроение", categories[0].title)
+        assertEquals(listOf("Радостно", "sad"), categories[0].options.map { it.title })
+    }
+
+    @Test
+    fun `synced lyrics win over plain text`() = runTest {
+        server.enqueue(
+            MockResponse.Builder().body(
+                """
+                {"response":{"lyrics":{"type":"timestamps","text":["a","b"],
+                  "timestamps":[{"begin":1000,"end":2000,"line":"first"},{"begin":2000,"end":3000,"line":"second"}]}}}
+                """.trimIndent(),
+            ).build(),
+        )
+
+        val lyrics = requireNotNull(repository.getLyrics(com.vkmusic.data.model.Track(5, 1, "t", "a", 10, null)))
+
+        assertTrue(lyrics.isSynced)
+        assertEquals(listOf(1000L, 2000L), lyrics.lines.map { it.startMs })
+        assertTrue(requireNotNull(server.takeRequest().body).utf8().contains("audio_id=5_1"))
+    }
+
+    @Test
+    fun `my albums request albums filter and keep only artist albums`() = runTest {
+        server.enqueue(
+            MockResponse.Builder().body(
+                """
+                {"response":{"count":2,"items":[
+                  {"id":1,"owner_id":42,"title":"Мой плейлист"},
+                  {"id":2,"owner_id":-5,"title":"Альбом","main_artists":[{"name":"Artist","id":"a1"}]}
+                ]}}
+                """.trimIndent(),
+            ).build(),
+        )
+
+        val albums = repository.getMyAlbums()
+
+        assertTrue(requireNotNull(server.takeRequest().body).utf8().contains("filters=albums"))
+        assertEquals(listOf("Альбом"), albums.map { it.title })
+        assertTrue(albums.single().isAlbum)
     }
 }

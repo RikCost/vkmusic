@@ -14,6 +14,8 @@ import androidx.compose.material.icons.rounded.ShuffleOn
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
@@ -55,6 +57,7 @@ fun ShuffleIconButton(player: Player) {
         Icon(
             imageVector = if (state.shuffleOn) Icons.Rounded.ShuffleOn else Icons.Rounded.Shuffle,
             contentDescription = "Перемешать",
+            tint = if (state.shuffleOn) MaterialTheme.colorScheme.primary else LocalContentColor.current,
         )
     }
 }
@@ -70,6 +73,7 @@ fun RepeatIconButton(player: Player) {
                 else -> Icons.Rounded.Repeat
             },
             contentDescription = "Повтор",
+            tint = if (state.repeatModeState != Player.REPEAT_MODE_OFF) MaterialTheme.colorScheme.primary else LocalContentColor.current,
         )
     }
 }
