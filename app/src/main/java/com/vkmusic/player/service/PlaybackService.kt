@@ -5,6 +5,7 @@ package com.vkmusic.player.service
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.SystemClock
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
@@ -29,6 +30,7 @@ import com.vkmusic.data.repository.SettingsRepository
 import com.vkmusic.data.repository.TrackUrlResolver
 import com.vkmusic.di.ApplicationScope
 import com.vkmusic.player.audio.AudioEffects
+import com.vkmusic.player.audio.CrossfadeCurve
 import com.vkmusic.player.audio.EqualizerAudioProcessor
 import com.vkmusic.player.audio.LoudnessNormalizerAudioProcessor
 import com.vkmusic.player.queue.QueueExtender
@@ -43,6 +45,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -61,27 +65,23 @@ class PlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var rewindToStart = true
     private var saveLatest = true
+    private var crossfadeMs = 0L
     private var extending = false
     private val resolving = mutableSetOf<String>()
+
+    // Плеер сессии. При плавном переходе сессия переезжает на новый плеер, а старый доигрывает хвост.
+    private lateinit var player: ExoPlayer
+    private lateinit var queueListener: QueueListener
+    private var crossfade: Crossfade? = null
 
     override fun onCreate() {
         super.onCreate()
         setMediaNotificationProvider(
             DefaultMediaNotificationProvider.Builder(this).build().apply { setSmallIcon(R.drawable.ic_notification) },
         )
-        val player = ExoPlayer.Builder(this, EffectsRenderersFactory(this, audioEffects))
-            .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                true,
-            )
-            .setHandleAudioBecomingNoisy(true)
-            .setWakeMode(C.WAKE_MODE_NETWORK)
-            .build()
-        player.addListener(QueueListener(player))
+        player = buildPlayer()
+        queueListener = QueueListener(player)
+        player.addListener(queueListener)
 
         val sessionActivity = PendingIntent.getActivity(
             this,
@@ -101,8 +101,113 @@ class PlaybackService : MediaSessionService() {
                 audioEffects.normalizer = settings.normalizer
                 rewindToStart = settings.rewindToStart
                 saveLatest = settings.saveLatest
+                crossfadeMs = settings.crossfadeSeconds * 1_000L
                 if (player.playbackParameters.speed != settings.playbackSpeed) player.setPlaybackSpeed(settings.playbackSpeed)
             }
+        }
+        scope.launch {
+            while (isActive) {
+                delay(if (crossfade == null) CROSSFADE_POLL_MS else CROSSFADE_TICK_MS)
+                val active = crossfade
+                if (active == null) maybeStartCrossfade() else active.tick()
+            }
+        }
+    }
+
+    private fun buildPlayer(): ExoPlayer = ExoPlayer.Builder(this, EffectsRenderersFactory(this, audioEffects))
+        .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
+        .setAudioAttributes(AUDIO_ATTRIBUTES, true)
+        .setHandleAudioBecomingNoisy(true)
+        .setWakeMode(C.WAKE_MODE_NETWORK)
+        .build()
+
+    /**
+     * Запускает переход, когда до конца трека остаётся [crossfadeMs]. Следующий трек сразу играет
+     * в новом плеере, и сессия переходит на него: интерфейс и уведомление показывают уже новый трек.
+     * Трек без ссылки (веб-VK ещё не вернул её) играет обычным переходом.
+     */
+    private fun maybeStartCrossfade() {
+        val old = player
+        if (crossfadeMs <= 0 || !old.isPlaying || old.isCurrentMediaItemLive || old.repeatMode == Player.REPEAT_MODE_ONE) return
+        val duration = old.duration
+        if (duration == C.TIME_UNSET || duration < crossfadeMs * 2) return
+        val remaining = ((duration - old.currentPosition) / old.playbackParameters.speed).toLong()
+        if (remaining > crossfadeMs || remaining < MIN_CROSSFADE_MS) return
+        val nextIndex = old.nextMediaItemIndex
+        if (nextIndex == C.INDEX_UNSET || old.getMediaItemAt(nextIndex).needsUrl) return
+
+        // Без этого новый плеер заберёт аудиофокус у старого, и тот встанет на паузу.
+        old.setAudioAttributes(AUDIO_ATTRIBUTES, false)
+        old.removeListener(queueListener)
+
+        val next = buildPlayer()
+        queueListener = QueueListener(next)
+        next.addListener(queueListener)
+        next.volume = 0f
+        next.playbackParameters = old.playbackParameters
+        next.repeatMode = old.repeatMode
+        next.shuffleModeEnabled = old.shuffleModeEnabled
+        next.setMediaItems(List(old.mediaItemCount, old::getMediaItemAt), nextIndex, 0L)
+        next.prepare()
+        next.play()
+
+        // Старый плеер оставляет только текущий трек, чтобы на его конце не перейти к следующему.
+        old.repeatMode = Player.REPEAT_MODE_OFF
+        val current = old.currentMediaItemIndex
+        if (current + 1 < old.mediaItemCount) old.removeMediaItems(current + 1, old.mediaItemCount)
+        if (current > 0) old.removeMediaItems(0, current)
+
+        player = next
+        mediaSession?.player = RewindingPlayer(next)
+        crossfade = Crossfade(old, next, remaining).also { next.addListener(it) }
+    }
+
+    /**
+     * Затухание [outgoing] и нарастание [incoming]. Время идёт, только пока новый трек реально играет,
+     * чтобы его буферизация не съела переход. Любое действие пользователя с новым плеером обрывает хвост.
+     */
+    private inner class Crossfade(
+        private val outgoing: ExoPlayer,
+        private val incoming: ExoPlayer,
+        private val durationMs: Long,
+    ) : Player.Listener {
+        private var elapsedMs = 0L
+        private var lastTick = SystemClock.elapsedRealtime()
+
+        fun tick() {
+            val now = SystemClock.elapsedRealtime()
+            if (incoming.isPlaying) elapsedMs += now - lastTick
+            lastTick = now
+            if (elapsedMs >= durationMs || outgoing.playbackState == Player.STATE_ENDED || outgoing.playerError != null) {
+                finish()
+                return
+            }
+            val (out, `in`) = CrossfadeCurve.gains(elapsedMs.toFloat() / durationMs)
+            outgoing.volume = out
+            incoming.volume = `in`
+        }
+
+        fun finish() {
+            if (crossfade !== this) return
+            crossfade = null
+            incoming.removeListener(this)
+            incoming.volume = 1f
+            outgoing.release()
+        }
+
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (!playWhenReady) finish()
+        }
+
+        // Например, звонок: новый плеер замолкает сам, а хвост без аудиофокуса продолжил бы играть.
+        override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: Int) {
+            if (playbackSuppressionReason != Player.PLAYBACK_SUPPRESSION_REASON_NONE) finish()
+        }
+
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = finish()
+
+        override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+            if (reason == Player.DISCONTINUITY_REASON_SEEK) finish()
         }
     }
 
@@ -114,6 +219,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         mediaSession?.player?.let(::saveQueue)
+        crossfade?.finish()
         scope.cancel()
         mediaSession?.run {
             player.release()
@@ -235,5 +341,14 @@ class PlaybackService : MediaSessionService() {
         const val EXTEND_THRESHOLD = 2
         const val SAVED_QUEUE_LIMIT = 500
         const val RESOLVE_AHEAD = 3
+
+        const val CROSSFADE_POLL_MS = 250L
+        const val CROSSFADE_TICK_MS = 50L
+        const val MIN_CROSSFADE_MS = 1_000L
+
+        val AUDIO_ATTRIBUTES: AudioAttributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .build()
     }
 }

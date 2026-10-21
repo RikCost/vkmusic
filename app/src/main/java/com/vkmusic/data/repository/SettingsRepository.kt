@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.vkmusic.player.audio.EqualizerPresets
 import kotlinx.coroutines.flow.Flow
@@ -39,6 +40,8 @@ data class AppSettings(
     val saveLatest: Boolean = true,
     val playLatestOnStart: Boolean = false,
     val playbackSpeed: Float = 1f,
+    // Плавный переход между треками, секунд; 0 — выключен.
+    val crossfadeSeconds: Int = 0,
     val mixOptions: Map<String, List<String>> = emptyMap(),
     // Папка для MP3 — URI дерева SAF; null — «Музыка/MuVK» по умолчанию.
     val exportTreeUri: String? = null,
@@ -73,6 +76,7 @@ class SettingsRepository @Inject constructor(
             saveLatest = prefs[Keys.SAVE_LATEST] ?: true,
             playLatestOnStart = prefs[Keys.PLAY_LATEST] ?: false,
             playbackSpeed = prefs[Keys.SPEED] ?: 1f,
+            crossfadeSeconds = prefs[Keys.CROSSFADE] ?: 0,
             mixOptions = prefs[Keys.MIX_OPTIONS]?.let { runCatching { json.decodeFromString(mixSerializer, it) }.getOrNull() }
                 .orEmpty(),
             exportTreeUri = prefs[Keys.EXPORT_TREE],
@@ -104,6 +108,8 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setPlaybackSpeed(value: Float) = dataStore.edit { it[Keys.SPEED] = value }
 
+    suspend fun setCrossfadeSeconds(value: Int) = dataStore.edit { it[Keys.CROSSFADE] = value }
+
     suspend fun setMixOptions(value: Map<String, List<String>>) = dataStore.edit {
         it[Keys.MIX_OPTIONS] = json.encodeToString(mixSerializer, value)
     }
@@ -128,6 +134,7 @@ class SettingsRepository @Inject constructor(
         val SAVE_LATEST = booleanPreferencesKey("save_latest")
         val PLAY_LATEST = booleanPreferencesKey("play_latest_on_start")
         val SPEED = floatPreferencesKey("playback_speed")
+        val CROSSFADE = intPreferencesKey("crossfade_seconds")
         val MIX_OPTIONS = stringPreferencesKey("mix_options")
         val EXPORT_TREE = stringPreferencesKey("export_tree_uri")
     }

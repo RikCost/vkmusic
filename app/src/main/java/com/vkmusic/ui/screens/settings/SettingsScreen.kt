@@ -127,6 +127,7 @@ class SettingsViewModel @Inject constructor(
     fun setRewind(value: Boolean) = launch { repository.setRewindToStart(value) }
     fun setSaveLatest(value: Boolean) = launch { repository.setSaveLatest(value) }
     fun setPlayLatest(value: Boolean) = launch { repository.setPlayLatestOnStart(value) }
+    fun setCrossfade(seconds: Int) = launch { repository.setCrossfadeSeconds(seconds) }
     fun setNormalizer(value: NormalizerSettings) = launch { repository.setNormalizer(value) }
     fun setEqualizerEnabled(value: Boolean) = launch { repository.setEqualizerEnabled(value) }
 
@@ -180,6 +181,18 @@ fun SettingsScreen(
                     checked = current.playLatestOnStart,
                     onChange = viewModel::setPlayLatest,
                     enabled = current.saveLatest,
+                )
+            }
+            item {
+                LabeledSlider(
+                    title = "Плавный переход между треками",
+                    valueText = if (current.crossfadeSeconds == 0) "Выкл." else "${current.crossfadeSeconds} с",
+                    hint = "Конец трека затухает, пока нарастает следующий",
+                    value = current.crossfadeSeconds.toFloat(),
+                    range = 0f..MAX_CROSSFADE_SECONDS.toFloat(),
+                    steps = MAX_CROSSFADE_SECONDS - 1,
+                    enabled = true,
+                    onChange = { viewModel.setCrossfade(it.roundToInt()) },
                 )
             }
 
@@ -380,6 +393,8 @@ private fun ThemeCard(theme: MeridiusTheme?, selected: Boolean, onClick: () -> U
         )
     }
 }
+
+private const val MAX_CROSSFADE_SECONDS = 12
 
 @Composable
 private fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = true) {
