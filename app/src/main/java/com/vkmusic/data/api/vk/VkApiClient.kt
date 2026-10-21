@@ -22,12 +22,17 @@ class VkApiClient(
     private val tokenProvider: suspend () -> String?,
     private val apiUrl: HttpUrl = VkConfig.API_URL.toHttpUrl(),
 ) {
-    suspend fun <T> call(method: String, deserializer: DeserializationStrategy<T>, params: Map<String, Any?> = emptyMap()): T {
+    suspend fun <T> call(
+        method: String,
+        deserializer: DeserializationStrategy<T>,
+        params: Map<String, Any?> = emptyMap(),
+        version: String = VkConfig.API_VERSION,
+    ): T {
         val token = tokenProvider() ?: throw VkApiException(5, "Нет токена: войдите в аккаунт")
         val body = FormBody.Builder().apply {
             params.forEach { (key, value) -> if (value != null) add(key, value.toString()) }
             add("access_token", token)
-            add("v", VkConfig.API_VERSION)
+            add("v", version)
         }.build()
         val request = Request.Builder()
             .url(apiUrl.newBuilder().addPathSegment(method).build())

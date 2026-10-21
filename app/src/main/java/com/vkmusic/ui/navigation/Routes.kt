@@ -6,28 +6,35 @@ import kotlinx.serialization.Serializable
 data object LoginRoute
 
 @Serializable
-data object TracksRoute
+data object HomeRoute
 
 @Serializable
-data object SearchRoute
+data object MusicRoute
 
 @Serializable
-data object PlaylistsRoute
+data object ExploreRoute
 
 @Serializable
 data object FriendsRoute
 
 @Serializable
-data object DownloadsRoute
+data object CommunitiesRoute
 
 @Serializable
 data object PlayerRoute
 
 @Serializable
-data class PlaylistRoute(val ownerId: Long, val playlistId: Long, val title: String, val accessKey: String? = null)
+data object SettingsRoute
 
 @Serializable
-data class FriendRoute(val ownerId: Long, val name: String)
+data class PlaylistRoute(val ownerId: Long, val playlistId: Long, val title: String, val accessKey: String? = null)
+
+/** Музыка и плейлисты пользователя (ownerId > 0) или сообщества (ownerId < 0). */
+@Serializable
+data class OwnerRoute(val ownerId: Long, val name: String)
 
 @Serializable
 data class SimilarRoute(val ownerId: Long, val audioId: Long, val title: String)
+
+@Serializable
+data class ArtistRoute(val artistId: String, val name: String)

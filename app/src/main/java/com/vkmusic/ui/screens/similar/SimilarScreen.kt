@@ -15,6 +15,7 @@ import com.vkmusic.data.model.Track
 import com.vkmusic.ui.components.BackTopBar
 import com.vkmusic.ui.components.TrackSourcePage
 import com.vkmusic.ui.components.TrackSourceViewModel
+import com.vkmusic.ui.navigation.LocalNavigator
 import com.vkmusic.ui.navigation.SimilarRoute
 import com.vkmusic.ui.screens.bottomOnly
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -38,18 +39,15 @@ class SimilarViewModel @Inject constructor(
 @Composable
 fun SimilarScreen(
     contentPadding: PaddingValues,
-    onBack: () -> Unit,
-    onSimilar: (Track) -> Unit,
     viewModel: SimilarViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
-        BackTopBar(title = "Похожие", subtitle = viewModel.route.title, onBack = onBack)
+        BackTopBar(title = "Похожие", subtitle = viewModel.route.title, onBack = LocalNavigator.current::back)
         TrackSourcePage(
             state = state,
             onRefresh = viewModel::refresh,
-            onSimilar = onSimilar,
             contentPadding = contentPadding.bottomOnly(),
             emptyText = "Похожих треков не нашлось",
         )

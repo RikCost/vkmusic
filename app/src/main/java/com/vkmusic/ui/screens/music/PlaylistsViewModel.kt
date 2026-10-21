@@ -1,4 +1,4 @@
-package com.vkmusic.ui.screens.playlists
+package com.vkmusic.ui.screens.music
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
