@@ -1,5 +1,3 @@
-import java.util.Properties
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -9,15 +7,9 @@ plugins {
 }
 
 val versionMajor = 0
-val versionMinor = 3
+val versionMinor = 4
 val versionPatch = 0
 val appVersionName = "$versionMajor.$versionMinor.$versionPatch"
-
-val localProperties = Properties().apply {
-    val file = rootProject.file("local.properties")
-    if (file.exists()) file.inputStream().use(::load)
-}
-fun secret(key: String): String = (localProperties.getProperty(key) ?: "").trim()
 
 android {
     namespace = "com.vkmusic"
@@ -30,8 +22,6 @@ android {
         versionCode = versionMajor * 10_000 + versionMinor * 100 + versionPatch
         versionName = appVersionName
 
-        buildConfigField("String", "VK_CLIENT_ID", "\"${secret("vk.clientId")}\"")
-        buildConfigField("String", "VK_CLIENT_SECRET", "\"${secret("vk.clientSecret")}\"")
     }
 
     buildTypes {
@@ -106,6 +96,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.palette.ktx)
+    implementation(libs.zxing.core)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

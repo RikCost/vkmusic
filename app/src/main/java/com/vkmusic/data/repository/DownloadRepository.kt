@@ -44,6 +44,7 @@ class DownloadRepository @Inject constructor(
     private val downloadManager: DownloadManager,
     private val json: Json,
     @param:ApplicationScope private val scope: CoroutineScope,
+    private val trackUrlResolver: TrackUrlResolver,
 ) {
     private val _downloads = MutableStateFlow<Map<String, TrackDownload>>(emptyMap())
     val downloads: StateFlow<Map<String, TrackDownload>> = _downloads.asStateFlow()
@@ -75,7 +76,14 @@ class DownloadRepository @Inject constructor(
     }
 
     fun download(tracks: List<Track>) {
-        tracks.filter { it.url != null && _downloads.value[it.id]?.status.let { s -> s == null || s == DownloadStatus.Failed } }.forEach { track ->
+        val candidates = tracks.filter { it.isPlayable && _downloads.value[it.id]?.status.let { s -> s == null || s == DownloadStatus.Failed } }
+        if (candidates.isEmpty()) return
+        // Веб-трекам ссылку нужно получить по хешам прямо перед скачиванием.
+        scope.launch(Dispatchers.Main.immediate) { enqueue(trackUrlResolver.resolve(candidates)) }
+    }
+
+    private fun enqueue(tracks: List<Track>) {
+        tracks.filter { it.url != null }.forEach { track ->
             val request = DownloadRequest.Builder(track.id, track.url!!.toUri())
                 .setCustomCacheKey(if (track.isHls) null else track.id)
                 .setMimeType(if (track.isHls) MimeTypes.APPLICATION_M3U8 else null)

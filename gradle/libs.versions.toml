@@ -18,6 +18,7 @@ datastore = "1.2.1"
 work = "2.11.2"
 coil = "3.4.0"
 palette = "1.0.0"
+zxing = "3.5.3"
 junit = "4.13.2"
 
 [libraries]
@@ -62,6 +63,7 @@ work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "w
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 palette-ktx = { module = "androidx.palette:palette-ktx", version.ref = "palette" }
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 
 junit = { module = "junit:junit", version.ref = "junit" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }

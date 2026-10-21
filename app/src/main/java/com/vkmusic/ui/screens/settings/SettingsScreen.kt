@@ -1,5 +1,7 @@
 package com.vkmusic.ui.screens.settings
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.os.Build
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -32,6 +35,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -44,6 +48,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -53,6 +59,7 @@ import androidx.lifecycle.viewModelScope
 import com.vkmusic.data.repository.AppSettings
 import com.vkmusic.data.repository.NormalizerSettings
 import com.vkmusic.data.repository.SettingsRepository
+import com.vkmusic.data.web.VkWebDiagnostics
 import com.vkmusic.player.audio.EqualizerPresets
 import com.vkmusic.ui.components.AppVersionText
 import com.vkmusic.ui.components.BackTopBar
@@ -62,7 +69,9 @@ import com.vkmusic.ui.screens.bottomOnly
 import com.vkmusic.ui.theme.MeridiusTheme
 import com.vkmusic.ui.theme.MeridiusThemes
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -73,7 +82,22 @@ import kotlin.math.roundToInt
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val repository: SettingsRepository,
+    private val diagnostics: VkWebDiagnostics,
 ) : ViewModel() {
+
+    private val _report = MutableStateFlow<String?>(null)
+    val report: StateFlow<String?> = _report.asStateFlow()
+
+    fun runDiagnostics() {
+        _report.value = "Проверка…"
+        viewModelScope.launch { _report.value = runCatching { diagnostics.run() }.getOrElse { "Ошибка: ${it.message}" } }
+    }
+
+    fun runSearchDiagnostics(query: String) {
+        if (query.isBlank()) return
+        _report.value = "Проверка поиска…"
+        viewModelScope.launch { _report.value = runCatching { diagnostics.searchReport(query.trim()) }.getOrElse { "Ошибка: ${it.message}" } }
+    }
 
     val settings: StateFlow<AppSettings?> = repository.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -155,6 +179,9 @@ fun SettingsScreen(
                 )
             }
 
+            item { SectionTitle("Диагностика веб-VK") }
+            item { DiagnosticsSection(viewModel) }
+
             item { SectionTitle("Аккаунт") }
             item {
                 OutlinedButton(onClick = onSignOut, modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -171,6 +198,48 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticsSection(viewModel: SettingsViewModel) {
+    val report by viewModel.report.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            "Проверяет, отвечает ли веб-версия VK (через неё идут ваша музыка, плейлисты и поиск треков). " +
+                "В отчёте нет паролей, значений cookie и токенов, но есть id аккаунта и начало ответа VK.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        var query by remember { mutableStateOf("") }
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            label = { Text("Запрос для проверки поиска") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = viewModel::runDiagnostics) { Text("Проверить") }
+            OutlinedButton(onClick = { viewModel.runSearchDiagnostics(query) }, enabled = query.isNotBlank()) { Text("Поиск") }
+            report?.let { text -> OutlinedButton(onClick = {
+                    context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("Диагностика веб-VK", text))
+                }) { Text("Скопировать") } }
+        }
+        report?.let { text ->
+            SelectionContainer {
+                Text(
+                    text,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .padding(12.dp),
+                )
             }
         }
     }

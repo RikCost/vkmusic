@@ -10,6 +10,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.vkmusic.data.api.VkAudioRepository
 import com.vkmusic.data.model.Track
 import com.vkmusic.data.repository.SettingsRepository
+import com.vkmusic.data.repository.TrackUrlResolver
 import com.vkmusic.player.service.PlaybackService
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -31,6 +32,7 @@ class PlayerConnection @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val queueStore: QueueStore,
     private val queueExtender: QueueExtender,
+    private val trackUrlResolver: TrackUrlResolver,
 ) {
     private val _player = MutableStateFlow<Player?>(null)
     val player: StateFlow<Player?> = _player.asStateFlow()
@@ -72,21 +74,27 @@ class PlayerConnection @Inject constructor(
         continuation: (suspend () -> List<Track>)? = null,
     ) {
         val player = _player.value ?: return
-        val playable = tracks.filter { it.url != null }.distinctBy { it.id }
+        val playable = tracks.filter { it.isPlayable }.distinctBy { it.id }
         if (playable.isEmpty()) return
         queueExtender.source = continuation
         val startId = tracks.getOrNull(startIndex)?.id
         val start = if (shuffle) playable.indices.random() else playable.indexOfFirst { it.id == startId }.coerceAtLeast(0)
-        player.shuffleModeEnabled = shuffle
-        player.setMediaItems(playable.map { it.toMediaItem() }, start, 0L)
-        player.prepare()
-        player.play()
+        // Стартовому треку ссылка нужна сразу; остальные сервис получит по мере продвижения очереди.
+        scope.launch {
+            val first = trackUrlResolver.resolve(listOf(playable[start])).first()
+            if (_player.value !== player) return@launch
+            val items = playable.map { if (it.id == first.id) first.toMediaItem() else it.toMediaItem() }
+            player.shuffleModeEnabled = shuffle
+            player.setMediaItems(items, start, 0L)
+            player.prepare()
+            player.play()
+        }
     }
 
     /** Загрузить первую порцию и запустить бесконечную очередь. @return false, если треков нет. */
     suspend fun playEndless(load: suspend () -> List<Track>): Boolean {
         val first = load()
-        if (first.none { it.url != null }) return false
+        if (first.none { it.isPlayable }) return false
         playQueue(first, continuation = load)
         return true
     }
@@ -94,7 +102,7 @@ class PlayerConnection @Inject constructor(
     /** @return true, если трек гарантированно сыграет следующим (при перемешивании позиция случайная). */
     fun playNext(track: Track): Boolean {
         val player = _player.value ?: return false
-        if (track.url == null) return false
+        if (!track.isPlayable) return false
         if (player.mediaItemCount == 0) {
             playQueue(listOf(track))
             return true
@@ -119,12 +127,18 @@ class PlayerConnection @Inject constructor(
             if (!settings.saveLatest || controller.mediaItemCount > 0) return@launch
             val saved = queueStore.load() ?: return@launch
             if (saved.tracks.isEmpty()) return@launch
-            val fresh = withTimeoutOrNull(REFRESH_TIMEOUT_MS) { runCatching { api.getByIds(saved.tracks) }.getOrNull() }
-                ?.associateBy { it.id }
-                .orEmpty()
-            val tracks = saved.tracks.map { old -> fresh[old.id]?.takeIf { it.url != null } ?: old }.filter { it.url != null }
-            if (tracks.isEmpty() || _player.value !== controller || controller.mediaItemCount > 0) return@launch
+            // Старые ссылки сбрасываются: веб-треки получат свежие по хешам, остальные — через getByIds.
+            val stale = saved.tracks.map { if (it.webHashes != null) it.copy(url = null) else it }
+            val fresh = withTimeoutOrNull(REFRESH_TIMEOUT_MS) {
+                runCatching { api.getByIds(stale.filter { it.webHashes == null }) }.getOrNull()
+            }?.associateBy { it.id }.orEmpty()
+            var tracks = stale.map { old -> fresh[old.id]?.takeIf { it.url != null } ?: old }.filter { it.isPlayable }
+            if (tracks.isEmpty()) return@launch
             val index = tracks.indexOfFirst { it.id == saved.tracks.getOrNull(saved.index)?.id }.coerceAtLeast(0)
+            // Иначе плеер начнёт с заглушки и потеряет сохранённую позицию.
+            val current = trackUrlResolver.resolve(listOf(tracks[index])).first()
+            tracks = tracks.toMutableList().also { it[index] = current }
+            if (_player.value !== controller || controller.mediaItemCount > 0) return@launch
             controller.setMediaItems(tracks.map { it.toMediaItem() }, index, saved.positionMs)
             controller.prepare()
             if (settings.playLatestOnStart) controller.play()

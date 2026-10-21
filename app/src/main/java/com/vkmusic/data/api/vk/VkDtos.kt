@@ -113,36 +113,3 @@ data class GroupDto(
     val name: String = "",
     @SerialName("photo_100") val photo100: String? = null,
 )
-
-@Serializable
-data class TokenResponse(
-    @SerialName("access_token") val accessToken: String? = null,
-    @SerialName("user_id") val userId: Long? = null,
-    val error: String? = null,
-    @SerialName("error_description") val errorDescription: String? = null,
-    @SerialName("validation_type") val validationType: String? = null,
-    @SerialName("validation_sid") val validationSid: String? = null,
-    @SerialName("phone_mask") val phoneMask: String? = null,
-    @SerialName("captcha_sid") val captchaSid: String? = null,
-    @SerialName("captcha_img") val captchaImg: String? = null,
-    @SerialName("super_app_token") val superAppToken: String? = null,
-)
-
-@Serializable
-data class AnonymTokenResponse(
-    val token: String? = null,
-    @SerialName("expired_at") val expiredAt: Long = 0,
-)
-
-@Serializable
-data class ValidateAccountResponse(
-    val sid: String? = null,
-    @SerialName("flow_name") val flowName: String? = null,
-    @SerialName("flow_names") val flowNames: List<String> = emptyList(),
-    @SerialName("can_skip_password") val canSkipPassword: Boolean = false,
-)
-
-@Serializable
-data class SendOtpResponse(
-    val success: Int = 0,
-)

@@ -1,16 +1,16 @@
 package com.vkmusic.data.api
 
 import com.vkmusic.data.api.fake.FakeVkAudioRepository
-import com.vkmusic.data.api.vk.VkApiAudioRepository
 import com.vkmusic.data.auth.SessionStore
 import com.vkmusic.data.model.Playlist
 import com.vkmusic.data.model.Track
+import com.vkmusic.data.web.VkWebAudioRepository
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class SwitchingVkAudioRepository @Inject constructor(
-    private val real: VkApiAudioRepository,
+    private val real: VkWebAudioRepository,
     private val fake: FakeVkAudioRepository,
     private val sessionStore: SessionStore,
 ) : VkAudioRepository {

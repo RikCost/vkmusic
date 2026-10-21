@@ -179,6 +179,16 @@ class VkApiAudioRepository(
     // Meridius (core.js, ExploreRequests.vkMix): POST audio.getStreamMixAudios, v=5.285,
     // mix_id/count/entity_id, выбранные фильтры — JSON-строкой в options. Ответ — массив аудио.
     override suspend fun getMix(mixId: String, entityId: String?, options: Map<String, List<String>>, count: Int): List<Track> {
+        val tracks = getMixTracks(mixId, entityId, options, count)
+        // Meridius дозапрашивает ссылки через getById; официальный клиент обычно получает url сразу.
+        val missing = tracks.filter { it.url == null }
+        if (missing.isEmpty()) return tracks
+        val resolved = runCatching { getByIds(missing) }.getOrDefault(emptyList()).associateBy { it.id }
+        return tracks.map { resolved[it.id] ?: it }
+    }
+
+    /** Треки микса как есть, без дозапроса ссылок. */
+    suspend fun getMixTracks(mixId: String, entityId: String?, options: Map<String, List<String>>, count: Int): List<Track> {
         val selected = options.filterValues { it.isNotEmpty() }
         val response = client.call(
             "audio.getStreamMixAudios",
@@ -192,13 +202,8 @@ class VkApiAudioRepository(
             version = MIX_API_VERSION,
         )
         val items = (response as? JsonArray) ?: response.asObject()?.get("items").asArray()
-        val tracks = items.mapNotNull { runCatching { json.decodeFromJsonElement(AudioDto.serializer(), it) }.getOrNull() }
+        return items.mapNotNull { runCatching { json.decodeFromJsonElement(AudioDto.serializer(), it) }.getOrNull() }
             .map { it.toTrack() }
-        // Meridius дозапрашивает ссылки через getById; официальный клиент обычно получает url сразу.
-        val missing = tracks.filter { it.url == null }
-        if (missing.isEmpty()) return tracks
-        val resolved = runCatching { getByIds(missing) }.getOrDefault(emptyList()).associateBy { it.id }
-        return tracks.map { resolved[it.id] ?: it }
     }
 
     override suspend fun getLyrics(track: Track): Lyrics? {
