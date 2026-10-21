@@ -1,7 +1,6 @@
 package com.vkmusic.di
 
 import android.os.Build
-import com.vkmusic.data.api.SwitchingVkAudioRepository
 import com.vkmusic.data.api.VkAudioRepository
 import com.vkmusic.data.api.vk.VkApiAudioRepository
 import com.vkmusic.data.api.vk.VkApiClient
@@ -26,7 +25,7 @@ abstract class VkModule {
 
     @Binds
     @Singleton
-    abstract fun bindVkAudioRepository(impl: SwitchingVkAudioRepository): VkAudioRepository
+    abstract fun bindVkAudioRepository(impl: VkWebAudioRepository): VkAudioRepository
 
     companion object {
         @Provides

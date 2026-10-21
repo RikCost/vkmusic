@@ -1,5 +1,6 @@
 package com.vkmusic.data.auth
 
+import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -15,6 +16,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -66,8 +68,14 @@ class SessionStore @Inject constructor(
     override fun saveCookies(serialized: String?) {
         scope.launch {
             cookieMutex.withLock {
-                dataStore.edit { prefs ->
-                    if (serialized == null) prefs.remove(COOKIES_KEY) else prefs[COOKIES_KEY] = cipher.encrypt(serialized)
+                // Запись идёт в фоне без вызывающего: сбой диска (fsync) иначе роняет приложение.
+                // Cookie остаются в памяти jar и сохранятся со следующим ответом VK.
+                try {
+                    dataStore.edit { prefs ->
+                        if (serialized == null) prefs.remove(COOKIES_KEY) else prefs[COOKIES_KEY] = cipher.encrypt(serialized)
+                    }
+                } catch (e: IOException) {
+                    Log.w(TAG, "cookies not saved", e)
                 }
             }
         }
@@ -76,5 +84,6 @@ class SessionStore @Inject constructor(
     private companion object {
         val KEY = stringPreferencesKey("vk_session")
         val COOKIES_KEY = stringPreferencesKey("vk_web_cookies")
+        const val TAG = "SessionStore"
     }
 }
