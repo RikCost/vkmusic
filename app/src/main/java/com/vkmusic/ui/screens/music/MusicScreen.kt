@@ -113,6 +113,7 @@ private fun DownloadsTab(contentPadding: PaddingValues, viewModel: DownloadsView
         onRefresh = {},
         contentPadding = contentPadding.bottomOnly(),
         emptyText = "Скачанных треков нет. Скачать можно из меню трека или целиком плейлист и альбом.",
+        downloadsMode = true,
         filter = filter,
         header = { if (state.data.isNotEmpty()) item { FilterField(filter, { filter = it }) } },
     )

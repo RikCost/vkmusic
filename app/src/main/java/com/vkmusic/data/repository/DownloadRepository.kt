@@ -35,7 +35,7 @@ sealed interface DownloadStatus {
     data object Failed : DownloadStatus
 }
 
-data class TrackDownload(val track: Track, val status: DownloadStatus, val updatedAt: Long)
+data class TrackDownload(val track: Track, val status: DownloadStatus, val updatedAt: Long, val bytes: Long = 0)
 
 @OptIn(UnstableApi::class)
 @Singleton
@@ -97,6 +97,18 @@ class DownloadRepository @Inject constructor(
         DownloadService.sendRemoveDownload(context, MusicDownloadService::class.java, track.id, false)
     }
 
+    /** Отменить всё, что ещё в очереди или качается; готовые загрузки остаются. */
+    fun cancelActive() {
+        _downloads.value.values
+            .filter { it.status == DownloadStatus.Queued || it.status is DownloadStatus.Downloading }
+            .forEach { remove(it.track) }
+    }
+
+    /** Удалить все офлайн-загрузки из хранилища приложения (сохранённые MP3 в папке не трогаются). */
+    fun removeAll() {
+        DownloadService.sendRemoveAllDownloads(context, MusicDownloadService::class.java, false)
+    }
+
     private fun put(download: Download) {
         val item = download.toTrackDownload() ?: return
         _downloads.update { it + (item.track.id to item) }
@@ -124,7 +136,7 @@ class DownloadRepository @Inject constructor(
             Download.STATE_DOWNLOADING -> DownloadStatus.Downloading(percentDownloaded.coerceAtLeast(0f))
             else -> DownloadStatus.Queued
         }
-        return TrackDownload(track, status, updateTimeMs)
+        return TrackDownload(track, status, updateTimeMs, bytesDownloaded)
     }
 
     private companion object {

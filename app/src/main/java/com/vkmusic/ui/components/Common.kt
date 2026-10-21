@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Cancel
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FilterList
@@ -57,8 +58,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vkmusic.data.model.Playlist
 import com.vkmusic.data.model.Track
+import com.vkmusic.data.repository.DownloadStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -130,17 +133,10 @@ fun RoundPlayButton(onClick: () -> Unit, enabled: Boolean = true, icon: ImageVec
 }
 
 @Composable
-fun PlayAllRow(tracks: List<Track>, actions: TrackActionsViewModel, modifier: Modifier = Modifier) {
-    var confirmExport by rememberSaveable { mutableStateOf(false) }
-    if (confirmExport) {
-        ConfirmDialog(
-            title = "Сохранить ${tracks.size} треков в MP3?",
-            text = "Файлы займут место на устройстве; сохранение идёт в фоне и может занять время.",
-            confirm = "Сохранить",
-            onConfirm = { actions.exportMp3(tracks) },
-            onDismiss = { confirmExport = false },
-        )
-    }
+fun PlayAllRow(tracks: List<Track>, actions: TrackActionsViewModel, modifier: Modifier = Modifier, downloadsMode: Boolean = false) {
+    val bulk = rememberBulkDownloadGuard()
+    val downloads by actions.downloads.collectAsStateWithLifecycle()
+    val hasActive = downloads.values.any { it.status == DownloadStatus.Queued || it.status is DownloadStatus.Downloading }
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -152,11 +148,18 @@ fun PlayAllRow(tracks: List<Track>, actions: TrackActionsViewModel, modifier: Mo
         IconButton(onClick = { actions.shuffle(tracks) }, enabled = tracks.isNotEmpty()) {
             Icon(Icons.Rounded.Shuffle, contentDescription = "Перемешать")
         }
-        IconButton(onClick = { actions.download(tracks) }, enabled = tracks.isNotEmpty()) {
-            Icon(Icons.Rounded.Download, contentDescription = "Скачать все")
+        // На вкладке «Загрузки» всё уже скачано или качается — вместо «Скачать» там отмена очереди.
+        if (downloadsMode) {
+            IconButton(onClick = actions::cancelDownloads, enabled = hasActive) {
+                Icon(Icons.Rounded.Cancel, contentDescription = "Отменить загрузки")
+            }
+        } else {
+            IconButton(onClick = { bulk.download(actions, tracks) }, enabled = tracks.isNotEmpty()) {
+                Icon(Icons.Rounded.Download, contentDescription = "Скачать все")
+            }
         }
         IconButton(
-            onClick = { if (tracks.size > CONFIRM_EXPORT_OVER) confirmExport = true else actions.exportMp3(tracks) },
+            onClick = { bulk.export(actions, tracks) },
             enabled = tracks.isNotEmpty(),
         ) {
             Icon(Icons.Rounded.SaveAlt, contentDescription = "Сохранить все в MP3")
@@ -226,6 +229,7 @@ fun TrackSourcePage(
     modifier: Modifier = Modifier,
     emptyText: String = "Здесь пока пусто",
     showPlayAll: Boolean = true,
+    downloadsMode: Boolean = false,
     filter: String = "",
     header: LazyListScope.() -> Unit = {},
     actions: TrackActionsViewModel = hiltViewModel(),
@@ -247,7 +251,7 @@ fun TrackSourcePage(
                     state.isLoading && state.data.isEmpty() -> item { LoadingBox() }
                     state.data.isEmpty() -> item { MessageBox(emptyText) }
                     tracks.isEmpty() -> item { MessageBox("Ничего не найдено") }
-                    showPlayAll -> item { PlayAllRow(tracks, actions) }
+                    showPlayAll -> item { PlayAllRow(tracks, actions, downloadsMode = downloadsMode) }
                 }
             },
         )
@@ -350,5 +354,3 @@ fun SecondaryIconButton(icon: ImageVector, description: String, onClick: () -> U
         Icon(icon, contentDescription = description)
     }
 }
-
-private const val CONFIRM_EXPORT_OVER = 20

@@ -45,6 +45,7 @@ import com.vkmusic.data.model.Track
 import com.vkmusic.ui.LocalSnackbarHostState
 import com.vkmusic.ui.components.Artwork
 import com.vkmusic.ui.components.BackTopBar
+import com.vkmusic.ui.components.rememberBulkDownloadGuard
 import com.vkmusic.ui.components.ConfirmDialog
 import com.vkmusic.ui.components.EditPlaylistDialog
 import com.vkmusic.ui.components.FilterField
@@ -149,6 +150,7 @@ private fun PlaylistHeader(
     val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
     var menuOpen by remember { mutableStateOf(false) }
+    val bulk = rememberBulkDownloadGuard()
 
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Row(verticalAlignment = Alignment.Top) {
@@ -197,10 +199,13 @@ private fun PlaylistHeader(
                     )
                 }
             }
-            IconButton(onClick = { actions.download(tracks) }, enabled = tracks.isNotEmpty()) {
+            IconButton(onClick = { bulk.download(actions, tracks) }, enabled = tracks.isNotEmpty()) {
                 Icon(Icons.Rounded.Download, contentDescription = "Скачать плейлист")
             }
-            IconButton(onClick = { actions.exportMp3(tracks, folder = playlist.title) }, enabled = tracks.isNotEmpty()) {
+            IconButton(
+                onClick = { bulk.export(actions, tracks, folder = playlist.title) },
+                enabled = tracks.isNotEmpty(),
+            ) {
                 Icon(Icons.Rounded.SaveAlt, contentDescription = "Сохранить плейлист в MP3")
             }
             IconButton(onClick = { context.shareText("${playlist.title}\n${playlist.shareUrl}") }) {
