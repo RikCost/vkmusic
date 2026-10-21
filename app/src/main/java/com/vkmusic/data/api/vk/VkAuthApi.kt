@@ -2,6 +2,7 @@ package com.vkmusic.data.api.vk
 
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import okhttp3.FormBody
 import okhttp3.HttpUrl
@@ -215,7 +216,8 @@ class VkAuthApi(
         val text = okHttpClient.newCall(request).awaitBody()
         val root = json.parseToJsonElement(text).jsonObject
         root["error"]?.let {
-            val error = json.decodeFromJsonElement(VkError.serializer(), it)
+            // Методы ecosystem.* кладут ошибку плоско: "error":1 и рядом error_code/error_msg.
+            val error = json.decodeFromJsonElement(VkError.serializer(), it as? JsonObject ?: root)
             throw VkApiException(error.code, error.message, error.captchaSid, error.captchaImg)
         }
         val response = root["response"] ?: throw VkApiException(-1, "Пустой ответ VK")

@@ -30,10 +30,13 @@ class RootViewModel @Inject constructor(
     val player = playerConnection.player
 
     fun signOut() {
+        // Сначала очистить очередь: тогда сервис, сохраняющий её при паузе, увидит пустой плеер.
         player.value?.run {
-            stop()
             clearMediaItems()
+            stop()
         }
+        // Сохранённая очередь принадлежит прошлому аккаунту — её нельзя восстанавливать после входа.
+        playerConnection.forgetQueue()
         viewModelScope.launch { authRepository.signOut() }
     }
 }

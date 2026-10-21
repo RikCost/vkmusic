@@ -1,18 +1,19 @@
 package com.vkmusic.ui.navigation
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.QueueMusic
-import androidx.compose.material.icons.rounded.DownloadForOffline
-import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.People
-import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Tag
 import androidx.compose.ui.graphics.vector.ImageVector
 import kotlin.reflect.KClass
 
+// Навигация Meridius (langs/ru.json → NAVIGATION): Главная, Музыка, Обзор, Друзья, Сообщества.
 enum class TopLevelDestination(val route: Any, val routeClass: KClass<*>, val label: String, val icon: ImageVector) {
-    Music(TracksRoute, TracksRoute::class, "Музыка", Icons.Rounded.LibraryMusic),
-    Search(SearchRoute, SearchRoute::class, "Поиск", Icons.Rounded.Search),
-    Playlists(PlaylistsRoute, PlaylistsRoute::class, "Плейлисты", Icons.AutoMirrored.Rounded.QueueMusic),
+    Home(HomeRoute, HomeRoute::class, "Главная", Icons.Rounded.Home),
+    Music(MusicRoute, MusicRoute::class, "Музыка", Icons.Rounded.MusicNote),
+    Explore(ExploreRoute, ExploreRoute::class, "Обзор", Icons.Rounded.Tag),
     Friends(FriendsRoute, FriendsRoute::class, "Друзья", Icons.Rounded.People),
-    Downloads(DownloadsRoute, DownloadsRoute::class, "Загрузки", Icons.Rounded.DownloadForOffline),
+    Communities(CommunitiesRoute, CommunitiesRoute::class, "Сообщества", Icons.Rounded.Groups),
 }

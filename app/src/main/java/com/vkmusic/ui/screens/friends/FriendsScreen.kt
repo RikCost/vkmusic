@@ -1,6 +1,7 @@
 package com.vkmusic.ui.screens.friends
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,55 +11,74 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.vkmusic.data.model.Friend
-import com.vkmusic.data.model.Track
+import com.vkmusic.ui.components.AccentTabs
 import com.vkmusic.ui.components.Artwork
 import com.vkmusic.ui.components.BackTopBar
+import com.vkmusic.ui.components.FilterField
 import com.vkmusic.ui.components.LoadingBox
 import com.vkmusic.ui.components.MessageBox
+import com.vkmusic.ui.components.PageTopBar
 import com.vkmusic.ui.components.TrackSourcePage
+import com.vkmusic.ui.navigation.LocalNavigator
 import com.vkmusic.ui.screens.bottomOnly
+import com.vkmusic.ui.screens.music.PlaylistRow
+
+@Composable
+fun FriendsScreen(contentPadding: PaddingValues, viewModel: FriendsViewModel = hiltViewModel()) {
+    OwnersPage("Друзья", "Нет друзей с открытой музыкой", contentPadding, viewModel)
+}
+
+@Composable
+fun CommunitiesScreen(contentPadding: PaddingValues, viewModel: CommunitiesViewModel = hiltViewModel()) {
+    OwnersPage("Сообщества", "Вы не состоите в сообществах", contentPadding, viewModel)
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FriendsScreen(
-    contentPadding: PaddingValues,
-    onOpenFriend: (Friend) -> Unit,
-    viewModel: FriendsViewModel = hiltViewModel(),
-) {
+private fun OwnersPage(title: String, emptyText: String, contentPadding: PaddingValues, viewModel: OwnersViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val navigator = LocalNavigator.current
+    var filter by rememberSaveable { mutableStateOf("") }
+    val items = state.data.filter { filter.isBlank() || it.name.contains(filter.trim(), ignoreCase = true) }
 
     Column(Modifier.fillMaxSize()) {
-        TopAppBar(title = { Text("Музыка друзей") })
+        PageTopBar(title)
         PullToRefreshBox(
             isRefreshing = state.isLoading && state.data.isNotEmpty(),
             onRefresh = viewModel::refresh,
             modifier = Modifier.weight(1f),
         ) {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding.bottomOnly()) {
+                if (state.data.size > FILTER_THRESHOLD) item { FilterField(filter, { filter = it }, placeholder = "Поиск") }
                 when {
                     state.error != null -> item { MessageBox(state.error.orEmpty()) }
                     state.isLoading && state.data.isEmpty() -> item { LoadingBox() }
-                    state.data.isEmpty() -> item { MessageBox("Нет друзей с открытой музыкой") }
+                    state.data.isEmpty() -> item { MessageBox(emptyText) }
                 }
-                items(state.data, key = { it.id }) { friend ->
+                items(items, key = { it.ownerId }) { owner ->
                     ListItem(
-                        headlineContent = { Text(friend.name) },
-                        supportingContent = { if (friend.trackCount > 0) Text("${friend.trackCount} треков") },
+                        headlineContent = { Text(owner.name, style = MaterialTheme.typography.titleSmall) },
+                        supportingContent = owner.subtitle?.let { subtitle -> @Composable { Text(subtitle) } },
                         leadingContent = {
-                            Artwork(friend.photoUrl, friend.id.toString(), Modifier.size(48.dp).clip(CircleShape))
+                            Artwork(owner.photoUrl, owner.ownerId.toString(), Modifier.size(48.dp).clip(CircleShape))
                         },
-                        modifier = Modifier.clickable { onOpenFriend(friend) },
+                        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.background),
+                        modifier = Modifier.clickable { navigator.openOwner(owner.ownerId, owner.name) },
                     )
                 }
             }
@@ -66,23 +86,46 @@ fun FriendsScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FriendTracksScreen(
-    contentPadding: PaddingValues,
-    onBack: () -> Unit,
-    onSimilar: (Track) -> Unit,
-    viewModel: FriendTracksViewModel = hiltViewModel(),
-) {
+fun OwnerScreen(contentPadding: PaddingValues, viewModel: OwnerTracksViewModel = hiltViewModel()) {
+    val navigator = LocalNavigator.current
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val playlists by viewModel.playlists.collectAsStateWithLifecycle()
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var filter by rememberSaveable { mutableStateOf("") }
 
     Column(Modifier.fillMaxSize()) {
-        BackTopBar(title = viewModel.route.name, onBack = onBack, subtitle = "Музыка")
-        TrackSourcePage(
-            state = state,
-            onRefresh = viewModel::refresh,
-            onSimilar = onSimilar,
-            contentPadding = contentPadding.bottomOnly(),
-            emptyText = "Музыка скрыта или пуста",
-        )
+        BackTopBar(title = viewModel.route.name, onBack = navigator::back, subtitle = if (viewModel.route.ownerId < 0) "Сообщество" else "Пользователь")
+        AccentTabs(listOf("Музыка", "Плейлисты"), tab) { tab = it }
+        Box(Modifier.weight(1f)) {
+            if (tab == 0) {
+                TrackSourcePage(
+                    state = state,
+                    onRefresh = viewModel::refresh,
+                    contentPadding = contentPadding.bottomOnly(),
+                    emptyText = "Музыка скрыта или пуста",
+                    filter = filter,
+                    header = { if (state.data.isNotEmpty()) item { FilterField(filter, { filter = it }) } },
+                )
+            } else {
+                PullToRefreshBox(
+                    isRefreshing = playlists.isLoading && playlists.data.isNotEmpty(),
+                    onRefresh = viewModel::refreshPlaylists,
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding.bottomOnly()) {
+                        when {
+                            playlists.error != null -> item { MessageBox(playlists.error.orEmpty()) }
+                            playlists.isLoading && playlists.data.isEmpty() -> item { LoadingBox() }
+                            playlists.data.isEmpty() -> item { MessageBox("Плейлистов нет") }
+                        }
+                        items(playlists.data, key = { it.id }) { PlaylistRow(it, navigator::openPlaylist) }
+                    }
+                }
+            }
+        }
     }
 }
+
+private const val FILTER_THRESHOLD = 8

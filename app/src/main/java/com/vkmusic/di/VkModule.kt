@@ -35,8 +35,8 @@ abstract class VkModule {
 
         @Provides
         @Singleton
-        fun provideVkApiAudioRepository(client: VkApiClient, sessionStore: SessionStore) =
-            VkApiAudioRepository(client) {
+        fun provideVkApiAudioRepository(client: VkApiClient, json: Json, sessionStore: SessionStore) =
+            VkApiAudioRepository(client, json) {
                 sessionStore.current()?.userId ?: error("Нет активной сессии VK")
             }
     }

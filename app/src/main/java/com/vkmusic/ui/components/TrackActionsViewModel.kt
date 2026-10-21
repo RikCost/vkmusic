@@ -2,6 +2,7 @@ package com.vkmusic.ui.components
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vkmusic.data.api.VkAudioRepository
 import com.vkmusic.data.model.Playlist
 import com.vkmusic.data.model.Track
 import com.vkmusic.data.repository.DownloadRepository
@@ -23,6 +24,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class TrackActionsViewModel @Inject constructor(
+    private val api: VkAudioRepository,
     private val trackRepository: TrackRepository,
     private val playlistRepository: PlaylistRepository,
     private val downloadRepository: DownloadRepository,
@@ -31,12 +33,12 @@ class TrackActionsViewModel @Inject constructor(
 
     val player = playerConnection.player
 
-    fun trackFor(mediaId: String?): Track? = playerConnection.trackFor(mediaId)
-
     val library: StateFlow<LibraryIndex> = trackRepository.libraryIndex
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryIndex())
 
     val downloads: StateFlow<Map<String, TrackDownload>> = downloadRepository.downloads
+
+    val myPlaylists: StateFlow<List<Playlist>> = playlistRepository.playlists
 
     val editablePlaylists: StateFlow<List<Playlist>> = playlistRepository.playlists
         .map { playlists -> playlists.filter { it.isEditable } }
@@ -54,6 +56,12 @@ class TrackActionsViewModel @Inject constructor(
     fun playNext(track: Track) {
         val exact = playerConnection.playNext(track)
         _messages.trySend(if (exact) "Будет воспроизведено следующим" else "Добавлено в очередь (включено перемешивание)")
+    }
+
+    // Meridius: «Микс по треку» — mix_id=track_mix, entity_id=<owner_id>_<id>, дальше подгружается порциями.
+    fun playTrackMix(track: Track) = launchReporting(null) {
+        val started = playerConnection.playEndless { api.getMix(TRACK_MIX, track.id, emptyMap(), MIX_PAGE) }
+        if (!started) _messages.trySend("Не удалось загрузить треки микса")
     }
 
     fun addToLibrary(track: Track) = launchReporting("Добавлено в мою музыку") { trackRepository.addToLibrary(track) }
@@ -79,5 +87,10 @@ class TrackActionsViewModel @Inject constructor(
                 .onSuccess { success?.let(_messages::trySend) }
                 .onFailure { _messages.trySend(it.message ?: "Ошибка") }
         }
+    }
+
+    private companion object {
+        const val TRACK_MIX = "track_mix"
+        const val MIX_PAGE = 10
     }
 }
