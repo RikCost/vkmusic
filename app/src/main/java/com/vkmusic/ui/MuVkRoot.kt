@@ -64,17 +64,17 @@ import com.vkmusic.ui.screens.playlists.PlaylistScreen
 import com.vkmusic.ui.screens.search.ExploreScreen
 import com.vkmusic.ui.screens.settings.SettingsScreen
 import com.vkmusic.ui.screens.similar.SimilarScreen
-import com.vkmusic.ui.theme.VkMusicTheme
+import com.vkmusic.ui.theme.MuVkTheme
 
 @Composable
-fun VkMusicRoot(viewModel: RootViewModel = hiltViewModel()) {
+fun MuVkRoot(viewModel: RootViewModel = hiltViewModel()) {
     val rootState by viewModel.state.collectAsStateWithLifecycle()
     val player by viewModel.player.collectAsStateWithLifecycle()
     val current = rootState ?: return
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(viewModel) { viewModel.exportEvents.collect { snackbarHostState.showSnackbar(it) } }
 
-    VkMusicTheme(themeId = current.settings.themeId) {
+    MuVkTheme(themeId = current.settings.themeId) {
         SystemBarsAppearance()
         val startDestination: Any = remember { if (current.authMode == AuthMode.SignedOut) LoginRoute else HomeRoute }
         val navController = rememberNavController()

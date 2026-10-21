@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "VkMusic"
+rootProject.name = "MuVK"
 include(":app")

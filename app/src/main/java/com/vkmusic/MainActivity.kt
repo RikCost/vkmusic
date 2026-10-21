@@ -12,7 +12,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.offline.DownloadService
 import com.vkmusic.player.download.MusicDownloadService
 import com.vkmusic.player.queue.PlayerConnection
-import com.vkmusic.ui.VkMusicRoot
+import com.vkmusic.ui.MuVkRoot
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -30,7 +30,7 @@ class MainActivity : ComponentActivity() {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         if (savedInstanceState == null) resumePendingDownloads()
-        setContent { VkMusicRoot() }
+        setContent { MuVkRoot() }
     }
 
     override fun onStart() {

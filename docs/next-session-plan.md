@@ -1,6 +1,6 @@
 # План работ — промпт для следующей сессии
 
-Контекст: Android-клиент VK Музыки (`com.vkmusic`, Kotlin + Compose + Hilt + Room + Media3).
+Контекст: Android-клиент MuVK (`com.vkmusic`, Kotlin + Compose + Hilt + Room + Media3).
 Дальше — блок ниже.
 
 ## 0. Правила работы в этом проекте
@@ -39,7 +39,7 @@ Meridius, но без FFmpeg); источник воспроизведения �
 (ожидается MP3; если AAC — файл будет `.aac`), запись в папку SAF на разных провайдерах.
 
 ### 2.3 Экран настроек (новый)
-Маршрутов настроек нет: `Routes.kt`, `VkMusicRoot.kt:104-156`; точка входа — `TracksScreen.kt:39-49`
+Маршрутов настроек нет: `Routes.kt`, `MuVkRoot.kt:104-156`; точка входа — `TracksScreen.kt:39-49`
 (рядом с Info/Logout). Persist — тот же DataStore `"settings"`
 (`SettingsRepository.kt:12-35`, `DataModule.kt:32-33`): добавить `cacheMaxBytes` (папка MP3 уже есть: `exportTreeUri`). Строкие следуют конвенции проекта — литералы на русском в Compose
 (в `res/values/strings.xml` всего 3 строки).

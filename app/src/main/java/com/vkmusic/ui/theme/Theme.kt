@@ -98,7 +98,7 @@ private val MeridiusTypography = Typography().let { base ->
 }
 
 @Composable
-fun VkMusicTheme(
+fun MuVkTheme(
     themeId: String = MeridiusThemes.all.first().id,
     content: @Composable () -> Unit,
 ) {
