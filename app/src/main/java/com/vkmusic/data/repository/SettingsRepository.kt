@@ -31,7 +31,6 @@ data class NormalizerSettings(
 )
 
 data class AppSettings(
-    val isDemoMode: Boolean = false,
     val themeId: String = DEFAULT_THEME,
     val equalizer: EqualizerSettings = EqualizerSettings(),
     val normalizer: NormalizerSettings = NormalizerSettings(),
@@ -57,7 +56,6 @@ class SettingsRepository @Inject constructor(
 
     val settings: Flow<AppSettings> = dataStore.data.map { prefs ->
         AppSettings(
-            isDemoMode = prefs[Keys.DEMO_MODE] ?: false,
             themeId = prefs[Keys.THEME] ?: AppSettings.DEFAULT_THEME,
             equalizer = EqualizerSettings(
                 enabled = prefs[Keys.EQ_ENABLED] ?: false,
@@ -78,8 +76,6 @@ class SettingsRepository @Inject constructor(
             exportTreeUri = prefs[Keys.EXPORT_TREE],
         )
     }.distinctUntilChanged()
-
-    suspend fun setDemoMode(value: Boolean) = dataStore.edit { it[Keys.DEMO_MODE] = value }
 
     suspend fun setTheme(id: String) = dataStore.edit { it[Keys.THEME] = id }
 
@@ -116,7 +112,6 @@ class SettingsRepository @Inject constructor(
         raw.split(',').mapNotNull { it.toFloatOrNull() }.takeIf { it.size == EqualizerPresets.frequencies.size }
 
     private object Keys {
-        val DEMO_MODE = booleanPreferencesKey("demo_mode")
         val THEME = stringPreferencesKey("theme")
         val EQ_ENABLED = booleanPreferencesKey("eq_enabled")
         val EQ_PRESET = stringPreferencesKey("eq_preset")

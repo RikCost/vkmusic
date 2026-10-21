@@ -9,11 +9,11 @@ import com.vkmusic.data.web.QrStatus
 import com.vkmusic.data.web.VkQrAuth
 import com.vkmusic.data.web.VkWebClient
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-enum class AuthMode { SignedOut, Demo, Vk }
+enum class AuthMode { SignedOut, Vk }
 
 /**
  * Вход как в Meridius — QR-кодом VK ID с подтверждением в приложении VK (и кодом, если VK его
@@ -26,17 +26,10 @@ class AuthRepository @Inject constructor(
     private val web: VkWebClient,
     private val webSession: WebSessionManager,
     private val sessionStore: SessionStore,
-    private val settingsRepository: SettingsRepository,
     private val trackDao: TrackDao,
     private val playlistRepository: PlaylistRepository,
 ) {
-    val mode: Flow<AuthMode> = combine(sessionStore.session, settingsRepository.settings) { session, settings ->
-        when {
-            session != null -> AuthMode.Vk
-            settings.isDemoMode -> AuthMode.Demo
-            else -> AuthMode.SignedOut
-        }
-    }
+    val mode: Flow<AuthMode> = sessionStore.session.map { if (it != null) AuthMode.Vk else AuthMode.SignedOut }
 
     suspend fun requestQr(): QrCode {
         // Новый вход начинается с чистой cookie-сессии, иначе VK ID может подхватить чужой аккаунт.
@@ -60,14 +53,8 @@ class AuthRepository @Inject constructor(
         finishLogin()
     }
 
-    suspend fun enterDemoMode() {
-        trackDao.clear()
-        settingsRepository.setDemoMode(true)
-    }
-
     suspend fun signOut() {
         webSession.signOut()
-        settingsRepository.setDemoMode(false)
         trackDao.clear()
         playlistRepository.clear()
         runCatching { CookieManager.getInstance().removeAllCookies(null) }
@@ -76,7 +63,6 @@ class AuthRepository @Inject constructor(
     private suspend fun finishLogin() {
         trackDao.clear()
         playlistRepository.clear()
-        settingsRepository.setDemoMode(false)
         webSession.completeLogin()
     }
 }

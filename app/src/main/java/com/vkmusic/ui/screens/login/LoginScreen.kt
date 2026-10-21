@@ -91,12 +91,14 @@ fun LoginScreen(
             Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
             Text("Музыкальный плеер для VK", color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (state.step == LoginStep.Code) CodeStep(state, viewModel) else QrStep(state, viewModel)
+            if (state.reconnecting) {
+                Text("Нет связи с VK — переподключаемся…", color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+            }
             state.error?.let {
                 Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
                 OutlinedButton(onClick = viewModel::loadQr) { Text("Повторить") }
             }
             Box(Modifier.height(8.dp))
-            TextButton(onClick = viewModel::continueInDemoMode) { Text("Демо-режим без аккаунта") }
             AppVersionText()
         }
     }

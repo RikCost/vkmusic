@@ -3,8 +3,7 @@
 Музыкальный клиент ВКонтакте для Android: поиск, рекомендации, «моя музыка», плейлисты и друзья
 с воспроизведением через Media3 и локальным хранением треков. Интерфейс и функции перенесены из
 десктопного плеера [Meridius](https://github.com/PurpleHorrorRus/Meridius) — как именно, описано в
-[docs/meridius-port.md](docs/meridius-port.md). Аккаунт можно не использовать — есть демо-режим на
-локальных данных.
+[docs/meridius-port.md](docs/meridius-port.md).
 
 - Package: `com.vkmusic`, версия 0.4.0
 - Минимум Android 8.0 (`minSdk 26`), собран против SDK 36 (`targetSdk 36`)
@@ -30,7 +29,6 @@
   прямой MP3 скачивается как есть, HLS расшифровывается (AES-128) и аудио вынимается из MPEG-TS
   без перекодирования; теги ID3v2.3 с обложкой. Если VK отдаёт AAC, файл сохраняется как `.aac`.
 - Поиск, рекомендации, альбомы/плейлисты, музыка друзей, создание плейлистов.
-- Демо-режим без аккаунта (`FakeVkAudioRepository`): тот же UI на локальных WAV-файлах.
 - Токен и cookie веб-сессии хранятся в DataStore в виде AES-GCM-шифра, ключ — в AndroidKeyStore (`KeystoreCipher`).
 
 ## Требования
@@ -64,7 +62,6 @@ app/src/main/java/com/vkmusic/
 │                       сообщества, исполнители), VkHeadersInterceptor (UA + X-VK-Android-Client)
 ├── data/web/           веб-VK как в Meridius: VkWebClient (cookie), VkQrAuth (QR-вход, web_token),
 │                       VkWebAudioRepository (al_audio.php), AudioUrlDecoder, WebAudioParser
-├── data/api/fake/      демо-репозиторий без сети
 ├── data/export/        сохранение файлами: HlsPlaylist, TsAudioExtractor, Id3Writer, ExportStorage,
 │                       Mp3Exporter, Mp3ExportWorker (WorkManager), Mp3ExportRepository
 ├── data/auth/          SessionStore, WebSessionManager (обновление токена), KeystoreCipher
