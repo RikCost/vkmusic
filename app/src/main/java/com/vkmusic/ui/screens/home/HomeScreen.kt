@@ -174,6 +174,7 @@ private fun ProfileHeader(profile: Profile?, onSettings: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun VkMixCard(selectedCount: Int, isStarting: Boolean, onPlay: () -> Unit, onConfigure: () -> Unit) {
     val accent = MaterialTheme.colorScheme.primary
@@ -198,7 +199,8 @@ private fun VkMixCard(selectedCount: Int, isStarting: Boolean, onPlay: () -> Uni
             color = Color.White.copy(alpha = 0.8f),
         )
         Spacer(Modifier.height(16.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        // На узком экране или с крупным шрифтом «Настроить микс» переносится строкой ниже, а не сжимается.
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Button(
                 onClick = onPlay,
                 enabled = !isStarting,

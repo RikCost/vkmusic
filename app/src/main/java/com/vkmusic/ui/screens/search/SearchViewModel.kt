@@ -1,5 +1,6 @@
 package com.vkmusic.ui.screens.search
 
+import kotlinx.coroutines.flow.combine
 import com.vkmusic.data.toUserMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -40,18 +41,29 @@ class SearchViewModel @Inject constructor(
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
+    private val retries = MutableStateFlow(0)
+
+    // Пока грузится новый запрос, на экране остаются прежние результаты — без мигания пустым экраном.
+    private var lastResult = SearchUiState(isLoading = true)
+
     val state: StateFlow<SearchUiState> = _query
         .map { it.trim() }
         .distinctUntilChanged()
         .debounce { if (it.isEmpty()) 0L else DEBOUNCE_MS }
+        .combine(retries) { q, _ -> q }
         .transformLatest { q ->
-            emit(SearchUiState(isLoading = true, isQueryEmpty = q.isEmpty()))
-            emit(load(q))
+            val keep = lastResult.takeIf { it.isQueryEmpty == q.isEmpty() && it.error == null } ?: SearchUiState(isQueryEmpty = q.isEmpty())
+            emit(keep.copy(isLoading = true, error = null))
+            emit(load(q).also { lastResult = it })
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchUiState(isLoading = true))
 
     fun onQueryChange(value: String) {
         _query.value = value
+    }
+
+    fun retry() {
+        retries.value++
     }
 
     private suspend fun load(query: String): SearchUiState = runCatching {

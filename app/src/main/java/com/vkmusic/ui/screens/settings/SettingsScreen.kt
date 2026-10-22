@@ -189,12 +189,12 @@ fun SettingsScreen(
 
             item { SectionTitle("Эквалайзер") }
             item {
-                SwitchRow("Включить эквалайзер", "18 полос, пресеты Meridius", current.equalizer.enabled, viewModel::setEqualizerEnabled)
+                SwitchRow("Включить эквалайзер", "18 полос и готовые пресеты", current.equalizer.enabled, viewModel::setEqualizerEnabled)
             }
             item { PresetPicker(current.equalizer.preset, viewModel::selectPreset) }
             itemsIndexed(EqualizerPresets.frequencies.toList()) { index, frequency ->
                 BandSlider(
-                    label = EqualizerPresets.label(frequency),
+                    label = bandLabel(frequency),
                     value = current.equalizer.levels.getOrElse(index) { 0f },
                     enabled = current.equalizer.enabled,
                     onChange = { viewModel.setBand(index, it) },
@@ -452,13 +452,13 @@ private fun PresetPicker(selected: String, onSelect: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box(Modifier.padding(horizontal = 16.dp)) {
         OutlinedButton(onClick = { open = true }) {
-            Text("Пресет: $selected")
+            Text("Пресет: ${presetTitle(selected)}")
             Icon(Icons.Rounded.ArrowDropDown, contentDescription = null)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             (listOf(EqualizerPresets.CUSTOM) + EqualizerPresets.presets.keys).forEach { name ->
                 DropdownMenuItem(
-                    text = { Text(name) },
+                    text = { Text(presetTitle(name)) },
                     leadingIcon = { if (name == selected) Icon(Icons.Rounded.Check, contentDescription = null) },
                     onClick = {
                         open = false
@@ -470,12 +470,48 @@ private fun PresetPicker(selected: String, onSelect: (String) -> Unit) {
     }
 }
 
+// Подпись полосы: «63 Гц», «1,4 кГц», «16 кГц».
+private fun bandLabel(frequency: Int): String =
+    if (frequency >= 1000) "${(frequency / 1000.0).toString().removeSuffix(".0").replace('.', ',')} кГц" else "$frequency Гц"
+
+// Пресеты хранятся в настройках под английскими ключами Meridius — по-русски только на экране.
+private fun presetTitle(name: String): String = PRESET_TITLES[name] ?: name
+
+private val PRESET_TITLES = mapOf(
+    EqualizerPresets.CUSTOM to "Своя настройка",
+    "Alternative" to "Альтернатива",
+    "Ballad" to "Баллада",
+    "Classic" to "Классика",
+    "Club" to "Клуб",
+    "Dance" to "Танцевальная",
+    "Full Bass" to "Больше баса",
+    "Full Bass & Treble" to "Бас и высокие",
+    "Full Treble" to "Больше высоких",
+    "Headphones" to "Наушники",
+    "Heavy Metal" to "Хеви-метал",
+    "Hip-Hop" to "Хип-хоп",
+    "Industrial" to "Индастриал",
+    "Jazz" to "Джаз",
+    "Large Hall" to "Большой зал",
+    "Live" to "Концерт",
+    "Party" to "Вечеринка",
+    "Pop" to "Поп",
+    "Rap" to "Рэп",
+    "Reggae" to "Регги",
+    "Rock" to "Рок",
+    "Ska" to "Ска",
+    "Soft" to "Мягкая",
+    "Soft Rock" to "Софт-рок",
+    "Techno" to "Техно",
+    "Vocal" to "Вокал",
+)
+
 @Composable
 private fun BandSlider(label: String, value: Float, enabled: Boolean, onChange: (Float) -> Unit) {
     var dragging by remember { mutableStateOf<Float?>(null) }
     val shown = dragging ?: value
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp)) {
-        Text("$label Гц", style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(64.dp))
+        Text(label, style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(64.dp))
         Slider(
             value = shown,
             onValueChange = { dragging = it },

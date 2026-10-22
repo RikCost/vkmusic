@@ -66,8 +66,10 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch { runCatching { playlistRepository.refresh() } }
         viewModelScope.launch {
             _recommendations.update { it.copy(isLoading = true, error = null) }
-            _recommendations.value = runCatching { api.getRecommendations() }
-                .fold({ LoadState(it) }, { LoadState(emptyList(), error = it.toUserMessage("Ошибка загрузки")) })
+            // Сбой обновления не стирает уже показанные рекомендации.
+            runCatching { api.getRecommendations() }
+                .onSuccess { _recommendations.value = LoadState(it) }
+                .onFailure { e -> _recommendations.update { it.copy(isLoading = false, error = e.toUserMessage("Ошибка загрузки")) } }
         }
     }
 

@@ -1,5 +1,6 @@
 package com.vkmusic.ui.components
 
+import androidx.compose.runtime.remember
 import coil3.request.crossfade
 import coil3.request.ImageRequest
 import coil3.compose.LocalPlatformContext
@@ -33,8 +34,10 @@ fun Artwork(
         PlaceholderArtwork(key)
         if (url != null) {
             // Обложка проявляется поверх заглушки, а не появляется рывком.
+            val context = LocalPlatformContext.current
+            val request = remember(url) { ImageRequest.Builder(context).data(url).crossfade(true).build() }
             AsyncImage(
-                model = ImageRequest.Builder(LocalPlatformContext.current).data(url).crossfade(true).build(),
+                model = request,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),

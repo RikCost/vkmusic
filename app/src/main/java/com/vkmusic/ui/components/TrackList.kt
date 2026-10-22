@@ -2,6 +2,7 @@
 
 package com.vkmusic.ui.components
 
+import androidx.compose.runtime.derivedStateOf
 import androidx.media3.ui.compose.state.rememberPlayPauseButtonState
 import com.vkmusic.ui.formatTracks
 import androidx.compose.animation.AnimatedContent
@@ -151,10 +152,11 @@ fun TrackRow(
     extraMenu: (@Composable (close: () -> Unit) -> Unit)? = null,
     isPlaying: Boolean = false,
 ) {
-    val downloads by actions.downloads.collectAsStateWithLifecycle()
-    val exports by actions.exports.collectAsStateWithLifecycle()
-    val status = downloads[track.id]?.status
-    val export = exports[track.id]
+    val downloadsState = actions.downloads.collectAsStateWithLifecycle()
+    val exportsState = actions.exports.collectAsStateWithLifecycle()
+    // Строка перерисовывается только от своего статуса, а не от прогресса любой загрузки в списке.
+    val status by remember(track.id) { derivedStateOf { downloadsState.value[track.id]?.status } }
+    val export by remember(track.id) { derivedStateOf { exportsState.value[track.id] } }
     // Колонка «Альбом» как в таблице Meridius — только там, где хватает ширины.
     val wide = LocalConfiguration.current.screenWidthDp >= WIDE_LAYOUT_DP
     val colors = MaterialTheme.colorScheme
@@ -337,7 +339,8 @@ fun PlaylistPickerDialog(track: Track, actions: TrackActionsViewModel, onDismiss
                 actions.createPlaylist(it, listOf(track))
                 close()
             },
-            onDismiss = close,
+            // «Отмена» возвращает к списку плейлистов, а не закрывает всё окно.
+            onDismiss = { creating = false },
         )
         return
     }

@@ -170,7 +170,7 @@ class VkApiAudioRepository(
             "audio.searchAlbums",
             VkItems.serializer(PlaylistDto.serializer()),
             mapOf("q" to query, "count" to count),
-        ).items.map { it.toPlaylist(me) }
+        ).items.map { it.toPlaylist(me) }.distinctBy { it.id }
     }
 
     override suspend fun getRecommendations(): List<Track> =
@@ -264,7 +264,7 @@ class VkApiAudioRepository(
             "audio.getAlbumsByArtist",
             VkItems.serializer(PlaylistDto.serializer()),
             mapOf("artist_id" to artistId, "count" to 100),
-        ).items.map { it.toPlaylist(me) }
+        ).items.map { it.toPlaylist(me) }.distinctBy { it.id }
     }
 
     override suspend fun getFriends(): List<Friend> =

@@ -1,5 +1,6 @@
 package com.vkmusic.ui.components
 
+import com.vkmusic.ui.formatTracks
 import com.vkmusic.data.toUserMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -59,7 +60,7 @@ class TrackActionsViewModel @Inject constructor(
             return
         }
         mp3ExportRepository.enqueue(playable, folder)
-        _messages.trySend(if (playable.size == 1) "Сохранение в MP3 начато" else "Сохранение ${playable.size} треков в MP3 начато")
+        _messages.trySend(if (playable.size == 1) "Сохранение в MP3 начато" else "Сохранение в MP3 начато: ${formatTracks(playable.size)}")
     }
 
 
@@ -155,7 +156,7 @@ class TrackActionsViewModel @Inject constructor(
 
     fun download(tracks: List<Track>) {
         downloadRepository.download(tracks)
-        _messages.trySend(if (tracks.size == 1) "Загрузка начата" else "Загрузка ${tracks.size} треков начата")
+        _messages.trySend(if (tracks.size == 1) "Загрузка начата" else "Загрузка начата: ${formatTracks(tracks.size)}")
     }
 
     fun removeDownload(track: Track) = downloadRepository.remove(track)

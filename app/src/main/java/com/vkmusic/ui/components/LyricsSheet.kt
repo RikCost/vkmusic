@@ -68,7 +68,7 @@ class LyricsViewModel @Inject constructor(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LyricsSheet(track: Track, onDismiss: () -> Unit, viewModel: LyricsViewModel = hiltViewModel(key = "lyrics_${track.id}")) {
+fun LyricsSheet(track: Track, onDismiss: () -> Unit, viewModel: LyricsViewModel = hiltViewModel()) {
     LaunchedEffect(track.id) { viewModel.load(track) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val player by viewModel.player.collectAsStateWithLifecycle()

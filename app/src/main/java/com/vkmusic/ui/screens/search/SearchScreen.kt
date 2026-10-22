@@ -1,5 +1,9 @@
 package com.vkmusic.ui.screens.search
 
+import androidx.compose.material.icons.rounded.SearchOff
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material3.LinearProgressIndicator
+import com.vkmusic.ui.components.ListSkeleton
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,7 +33,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vkmusic.ui.components.AccentTabs
-import com.vkmusic.ui.components.LoadingBox
 import com.vkmusic.ui.components.MessageBox
 import com.vkmusic.ui.components.SectionTitle
 import com.vkmusic.ui.components.TrackList
@@ -79,8 +82,8 @@ fun ExploreScreen(
                 contentPadding = contentPadding.bottomOnly(),
                 header = {
                     when {
-                        state.isLoading -> item { LoadingBox() }
-                        state.error != null -> item { MessageBox(state.error.orEmpty()) }
+                        state.error != null -> item { MessageBox(state.error.orEmpty(), icon = Icons.Rounded.CloudOff, onRetry = viewModel::retry) }
+                        state.isLoading && state.recommendations.isEmpty() -> item { ListSkeleton() }
                         else -> item { SectionTitle("Рекомендации") }
                     }
                 },
@@ -88,16 +91,18 @@ fun ExploreScreen(
             return@Column
         }
         AccentTabs(listOf("Треки", "Альбомы"), tab) { tab = it }
+        // Новый запрос грузится поверх прежних результатов: тонкая полоска вместо пустого экрана.
+        if (state.isLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
         when {
-            state.isLoading -> LoadingBox()
-            state.error != null -> MessageBox(state.error.orEmpty())
+            state.error != null -> MessageBox(state.error.orEmpty(), icon = Icons.Rounded.CloudOff, onRetry = viewModel::retry)
+            state.isLoading && state.tracks.isEmpty() && state.albums.isEmpty() -> ListSkeleton()
             tab == 0 -> TrackList(
                 tracks = state.tracks,
                 contentPadding = contentPadding.bottomOnly(),
-                header = { if (state.tracks.isEmpty()) item { MessageBox("Треки не найдены") } },
+                header = { if (state.tracks.isEmpty() && !state.isLoading) item { MessageBox("Треки не найдены", icon = Icons.Rounded.SearchOff) } },
             )
             else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding.bottomOnly()) {
-                if (state.albums.isEmpty()) item { MessageBox("Альбомы не найдены") }
+                if (state.albums.isEmpty() && !state.isLoading) item { MessageBox("Альбомы не найдены", icon = Icons.Rounded.SearchOff) }
                 items(state.albums, key = { it.id }) { PlaylistRow(it, navigator::openPlaylist) }
             }
         }

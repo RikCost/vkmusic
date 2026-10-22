@@ -2,6 +2,11 @@
 
 package com.vkmusic.ui.screens.player
 
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.layout.width
+import androidx.media3.common.MediaMetadata
+import androidx.compose.ui.platform.LocalConfiguration
+import android.content.res.Configuration
 import androidx.media3.ui.compose.state.rememberPlayPauseButtonState
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.basicMarquee
@@ -163,7 +168,6 @@ private fun ColumnScope.PlayerContent(player: Player, actions: TrackActionsViewM
     val metadata = itemState.mediaMetadata
     val key = itemState.mediaItem?.mediaId.orEmpty()
     val track = itemState.mediaItem?.toTrack()
-    val navigator = LocalNavigator.current
 
     // На паузе обложка чуть отступает назад и пружинит обратно при воспроизведении.
     val paused = rememberPlayPauseButtonState(player).showPlay
@@ -172,20 +176,47 @@ private fun ColumnScope.PlayerContent(player: Player, actions: TrackActionsViewM
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
         label = "cover_scale",
     )
+    val cover = Modifier.graphicsLayer {
+        scaleX = coverScale
+        scaleY = coverScale
+    }
+    // В горизонтальной ориентации квадратная обложка во всю ширину выталкивала кнопки за экран:
+    // там она слева во всю высоту, а название, перемотка и кнопки — справа.
+    if (LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+        Row(Modifier.weight(1f).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Artwork(
+                url = metadata.artworkUri?.toString(),
+                key = key,
+                cornerRadius = 8.dp,
+                modifier = Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true).then(cover),
+            )
+            Spacer(Modifier.width(24.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+                PlayerDetails(player, metadata, track)
+                Spacer(Modifier.height(8.dp))
+                track?.let { TrackActionsRow(it, actions, playerViewModel) }
+            }
+        }
+        return
+    }
     Spacer(Modifier.height(12.dp))
     Artwork(
         url = metadata.artworkUri?.toString(),
         key = key,
         cornerRadius = 8.dp,
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
-            .graphicsLayer {
-                scaleX = coverScale
-                scaleY = coverScale
-            },
+        modifier = Modifier.fillMaxWidth().aspectRatio(1f).then(cover),
     )
     Spacer(Modifier.height(28.dp))
+    PlayerDetails(player, metadata, track)
+    Spacer(Modifier.weight(1f))
+    track?.let { TrackActionsRow(it, actions, playerViewModel) }
+    Spacer(Modifier.height(8.dp))
+}
+
+/** Название, исполнитель, перемотка и кнопки управления — общие для обеих ориентаций. */
+@Composable
+private fun PlayerDetails(player: Player, metadata: MediaMetadata, track: Track?) {
+    val navigator = LocalNavigator.current
     Column(Modifier.fillMaxWidth()) {
         Text(
             text = metadata.title?.toString() ?: "Ничего не играет",
@@ -211,9 +242,6 @@ private fun ColumnScope.PlayerContent(player: Player, actions: TrackActionsViewM
     SeekBar(player)
     Spacer(Modifier.height(8.dp))
     TransportControls(player)
-    Spacer(Modifier.weight(1f))
-    track?.let { TrackActionsRow(it, actions, playerViewModel) }
-    Spacer(Modifier.height(8.dp))
 }
 
 @Composable
@@ -223,7 +251,7 @@ private fun TrackActionsRow(track: Track, actions: TrackActionsViewModel, player
     val speed by playerViewModel.speed.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val inLibrary = track in library
-    val downloaded = downloads[track.id]?.status == DownloadStatus.Completed
+    val downloadStatus = downloads[track.id]?.status
     var lyricsOpen by remember { mutableStateOf(false) }
 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -237,13 +265,7 @@ private fun TrackActionsRow(track: Track, actions: TrackActionsViewModel, player
         IconButton(onClick = { context.shareText("${track.artist} — ${track.title}\n${track.shareUrl}") }) {
             Icon(Icons.Rounded.Share, contentDescription = "Поделиться")
         }
-        IconButton(onClick = { if (downloaded) actions.removeDownload(track) else actions.download(listOf(track)) }) {
-            Icon(
-                if (downloaded) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
-                contentDescription = if (downloaded) "Удалить загрузку" else "Скачать",
-                tint = if (downloaded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-            )
-        }
+        DownloadButton(downloadStatus, onDownload = { actions.download(listOf(track)) }, onRemove = { actions.removeDownload(track) })
         IconButton(onClick = { actions.playTrackMix(track) }) {
             Icon(Icons.Rounded.AutoAwesome, contentDescription = "Микс по треку")
         }
@@ -255,6 +277,29 @@ private fun TrackActionsRow(track: Track, actions: TrackActionsViewModel, player
         }
     }
     if (lyricsOpen) LyricsSheet(track, onDismiss = { lyricsOpen = false })
+}
+
+/** Скачать / прогресс с отменой / удалить загрузку: повторное нажатие во время загрузки её отменяет, а не ставит заново. */
+@Composable
+private fun DownloadButton(status: DownloadStatus?, onDownload: () -> Unit, onRemove: () -> Unit) {
+    when (status) {
+        null, DownloadStatus.Failed -> IconButton(onClick = onDownload) {
+            Icon(Icons.Rounded.Download, contentDescription = "Скачать")
+        }
+        DownloadStatus.Completed -> IconButton(onClick = onRemove) {
+            Icon(Icons.Rounded.DownloadDone, contentDescription = "Удалить загрузку", tint = MaterialTheme.colorScheme.primary)
+        }
+        DownloadStatus.Queued, is DownloadStatus.Downloading -> IconButton(onClick = onRemove) {
+            Box(contentAlignment = Alignment.Center) {
+                if (status is DownloadStatus.Downloading) {
+                    CircularProgressIndicator({ status.percent / 100f }, Modifier.size(28.dp), strokeWidth = 2.dp)
+                } else {
+                    CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
+                }
+                Icon(Icons.Rounded.Close, contentDescription = "Отменить загрузку", modifier = Modifier.size(16.dp))
+            }
+        }
+    }
 }
 
 private const val PAUSED_COVER_SCALE = 0.88f

@@ -24,7 +24,12 @@ class RootViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val playerConnection: PlayerConnection,
     mp3ExportRepository: Mp3ExportRepository,
+    appMessages: AppMessages,
 ) : ViewModel() {
+
+    /** Сообщения, отправленные уже закрытыми экранами. */
+    val appMessages = appMessages.messages
+
 
     /** Итоги сохранения в MP3 — показываются, на каком бы экране ни был пользователь. */
     val exportEvents = mp3ExportRepository.events

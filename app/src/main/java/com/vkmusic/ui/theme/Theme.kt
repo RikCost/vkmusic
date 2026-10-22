@@ -35,8 +35,8 @@ object MeridiusThemes {
     const val SYSTEM = "system"
 
     val all = listOf(
-        MeridiusTheme("classic", "Meridius Classic", "Классическая цветовая схема Meridius", Color(0xFF141414), Color(0xFFE9003F)),
-        MeridiusTheme("modern", "Meridius Modern", "Тёмно-фиолетовая цветовая схема", Color(0xFF242529), Color(0xFF8C78F3)),
+        MeridiusTheme("classic", "Классическая", "Тёмная с красным акцентом", Color(0xFF141414), Color(0xFFE9003F)),
+        MeridiusTheme("modern", "Современная", "Тёмно-фиолетовая цветовая схема", Color(0xFF242529), Color(0xFF8C78F3)),
         MeridiusTheme("vk-black", "VK Black", "Чёрная цветовая схема в духе VK", Color(0xFF121212), Color(0xFF71AAEB)),
         MeridiusTheme("vk-white", "VK White", "Светлая цветовая схема в духе VK", Color(0xFFFFFFFF), Color(0xFF5181B8)),
         MeridiusTheme("spotify", "Spotify", "Палитра Spotify", Color(0xFF181818), Color(0xFF1DB954)),

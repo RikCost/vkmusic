@@ -1,5 +1,6 @@
 package com.vkmusic.ui.screens.playlists
 
+import com.vkmusic.ui.AppMessages
 import com.vkmusic.data.toUserMessage
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
@@ -35,6 +36,7 @@ sealed interface PlaylistEvent {
 class PlaylistViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val playlistRepository: PlaylistRepository,
+    private val appMessages: AppMessages,
 ) : TrackSourceViewModel() {
 
     val route = savedStateHandle.toRoute<PlaylistRoute>()
@@ -64,19 +66,36 @@ class PlaylistViewModel @Inject constructor(
 
     override suspend fun load(): List<Track> = playlistRepository.tracks(route.ownerId, route.playlistId, route.accessKey)
 
+    // Пока описание не загружено, редактировать нельзя: в диалоге оказалось бы пустое описание,
+    // и «Сохранить» стёрло бы настоящее в VK.
+    private var detailsLoaded = false
+
     private fun loadDetails() {
         viewModelScope.launch {
             runCatching { playlistRepository.details(route.ownerId, route.playlistId, route.accessKey) }
-                .onSuccess { _details.value = it }
+                .onSuccess {
+                    _details.value = it
+                    detailsLoaded = true
+                }
         }
+    }
+
+    /** @return можно ли открыть редактирование; если нет — догружает описание и объясняет почему. */
+    fun requestEdit(): Boolean {
+        if (detailsLoaded) return true
+        loadDetails()
+        viewModelScope.launch { _events.send(PlaylistEvent.Message("Плейлист ещё загружается — попробуйте через секунду")) }
+        return false
     }
 
     fun follow() = launchReporting("Вы подписались на плейлист") { playlistRepository.follow(_details.value) }
 
     fun unfollow() = launchReporting("Вы отписались от плейлиста") { playlistRepository.remove(_details.value) }
 
-    fun delete() = launchReporting("Плейлист удалён") {
+    fun delete() = launchReporting(null) {
         playlistRepository.remove(_details.value)
+        // Экран закрывается сразу — сообщение покажет корневой экран, иначе оно пропадало вместе с этим.
+        appMessages.show("Плейлист удалён")
         _events.send(PlaylistEvent.Closed)
     }
 

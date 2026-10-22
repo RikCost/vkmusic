@@ -1,5 +1,9 @@
 package com.vkmusic.ui.screens.friends
 
+import androidx.compose.material.icons.rounded.SearchOff
+import androidx.compose.material.icons.Icons
+import androidx.compose.runtime.remember
+import com.vkmusic.ui.components.normalizedForSearch
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,7 +58,10 @@ private fun OwnersPage(title: String, emptyText: String, contentPadding: Padding
     val state by viewModel.state.collectAsStateWithLifecycle()
     val navigator = LocalNavigator.current
     var filter by rememberSaveable { mutableStateOf("") }
-    val items = state.data.filter { filter.isBlank() || it.name.contains(filter.trim(), ignoreCase = true) }
+    val items = remember(state.data, filter) {
+        val query = filter.normalizedForSearch()
+        state.data.filter { query.isEmpty() || it.name.normalizedForSearch().contains(query) }
+    }
 
     Column(Modifier.fillMaxSize()) {
         PageTopBar(title)
@@ -69,6 +76,7 @@ private fun OwnersPage(title: String, emptyText: String, contentPadding: Padding
                     state.error != null -> item { MessageBox(state.error.orEmpty()) }
                     state.isLoading && state.data.isEmpty() -> item { LoadingBox() }
                     state.data.isEmpty() -> item { MessageBox(emptyText) }
+                    items.isEmpty() -> item { MessageBox("Ничего не найдено", icon = Icons.Rounded.SearchOff) }
                 }
                 items(items, key = { it.ownerId }) { owner ->
                     ListItem(

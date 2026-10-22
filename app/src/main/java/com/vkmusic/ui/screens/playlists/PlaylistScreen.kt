@@ -107,7 +107,7 @@ fun PlaylistScreen(
                         actions = actions,
                         onFollow = viewModel::follow,
                         onUnfollow = viewModel::unfollow,
-                        onEdit = { editing = true },
+                        onEdit = { if (viewModel.requestEdit()) editing = true },
                         onDelete = { confirmDelete = true },
                     )
                 }
@@ -211,27 +211,27 @@ private fun PlaylistHeader(
             ) {
                 Icon(Icons.Rounded.SaveAlt, contentDescription = "Сохранить плейлист в MP3")
             }
-            IconButton(onClick = { context.shareText("${playlist.title}\n${playlist.shareUrl}") }) {
-                Icon(Icons.Rounded.Share, contentDescription = "Поделиться плейлистом")
-            }
-            if (isEditable || isInLibrary) {
-                Box {
-                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "Ещё") }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        if (isEditable) {
-                            MenuAction("Редактировать плейлист", Icons.Rounded.Edit) {
-                                menuOpen = false
-                                onEdit()
-                            }
-                            MenuAction("Удалить плейлист", Icons.Rounded.Delete) {
-                                menuOpen = false
-                                onDelete()
-                            }
-                        } else {
-                            MenuAction("Отписаться от плейлиста", Icons.Rounded.RemoveCircleOutline) {
-                                menuOpen = false
-                                onUnfollow()
-                            }
+            // «Поделиться» — в меню: семь кнопок в ряд не помещались на экране шириной 360dp.
+            Box {
+                IconButton(onClick = { menuOpen = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "Ещё") }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    MenuAction("Поделиться", Icons.Rounded.Share) {
+                        menuOpen = false
+                        context.shareText("${playlist.title}\n${playlist.shareUrl}")
+                    }
+                    if (isEditable) {
+                        MenuAction("Редактировать плейлист", Icons.Rounded.Edit) {
+                            menuOpen = false
+                            onEdit()
+                        }
+                        MenuAction("Удалить плейлист", Icons.Rounded.Delete) {
+                            menuOpen = false
+                            onDelete()
+                        }
+                    } else if (isInLibrary) {
+                        MenuAction("Отписаться от плейлиста", Icons.Rounded.RemoveCircleOutline) {
+                            menuOpen = false
+                            onUnfollow()
                         }
                     }
                 }

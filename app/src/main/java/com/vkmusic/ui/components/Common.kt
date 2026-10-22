@@ -1,5 +1,7 @@
 package com.vkmusic.ui.components
 
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -73,7 +75,13 @@ fun BackTopBar(title: String, onBack: () -> Unit, subtitle: String? = null, acti
             Column {
                 Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 subtitle?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         },
@@ -98,7 +106,7 @@ fun PageTopBar(title: String, actions: @Composable () -> Unit = {}) {
 }
 
 @Composable
-fun MessageBox(text: String, modifier: Modifier = Modifier, icon: ImageVector? = null) {
+fun MessageBox(text: String, modifier: Modifier = Modifier, icon: ImageVector? = null, onRetry: (() -> Unit)? = null) {
     Column(
         modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 40.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -116,6 +124,9 @@ fun MessageBox(text: String, modifier: Modifier = Modifier, icon: ImageVector? =
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        onRetry?.let { retry ->
+            OutlinedButton(onClick = retry, modifier = Modifier.padding(top = 12.dp)) { Text("Повторить") }
+        }
     }
 }
 
@@ -211,10 +222,17 @@ fun FilterField(value: String, onValueChange: (String) -> Unit, modifier: Modifi
 }
 
 fun List<Track>.filteredBy(query: String): List<Track> {
-    val q = query.trim()
+    val q = query.normalizedForSearch()
     if (q.isEmpty()) return this
-    return filter { it.title.contains(q, ignoreCase = true) || it.artist.contains(q, ignoreCase = true) }
+    return filter { track ->
+        track.title.normalizedForSearch().contains(q) ||
+            track.artist.normalizedForSearch().contains(q) ||
+            track.albumTitle?.normalizedForSearch()?.contains(q) == true
+    }
 }
+
+/** Для поиска «ежик» находит «Ёжик»: регистр и ё/е не различаются. */
+fun String.normalizedForSearch(): String = trim().lowercase().replace('ё', 'е')
 
 @Composable
 fun AccentTabs(titles: List<String>, selected: Int, onSelect: (Int) -> Unit) {
@@ -250,7 +268,8 @@ fun TrackSourcePage(
     header: LazyListScope.() -> Unit = {},
     actions: TrackActionsViewModel = hiltViewModel(),
 ) {
-    val tracks = state.data.filteredBy(filter)
+    // Фильтр тысяч треков — только при смене списка или запроса, а не на каждой перерисовке.
+    val tracks = remember(state.data, filter) { state.data.filteredBy(filter) }
     PullToRefreshBox(
         isRefreshing = state.isLoading && state.data.isNotEmpty(),
         onRefresh = onRefresh,

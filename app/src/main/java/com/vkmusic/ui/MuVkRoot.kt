@@ -1,5 +1,6 @@
 package com.vkmusic.ui
 
+import androidx.lifecycle.Lifecycle
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Box
@@ -83,6 +84,7 @@ fun MuVkRoot(viewModel: RootViewModel = hiltViewModel()) {
     val current = rootState ?: return
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(viewModel) { viewModel.exportEvents.collect { snackbarHostState.showSnackbar(it) } }
+    LaunchedEffect(viewModel) { viewModel.appMessages.collect { snackbarHostState.showSnackbar(it) } }
 
     MuVkTheme(themeId = current.settings.themeId) {
         SystemBarsAppearance()
@@ -154,7 +156,7 @@ fun MuVkRoot(viewModel: RootViewModel = hiltViewModel()) {
                             onSignOut = signOutToLogin,
                         )
                     }
-                    composable<PlayerRoute> { PlayerScreen(player = player, onBack = navController::popBackStack) }
+                    composable<PlayerRoute> { PlayerScreen(player = player, onBack = navController::popBackSafely) }
                 }
             }
         }
@@ -234,9 +236,17 @@ private class NavControllerNavigator(private val navController: NavHostControlle
 
     override fun openSettings() = navController.navigate(SettingsRoute) { launchSingleTop = true }
 
-    override fun back() {
-        navController.popBackStack()
-    }
+    override fun back() = navController.popBackSafely()
+}
+
+/**
+ * «Назад» только с полностью открытого экрана и только если есть куда: второй быстрый тап во время
+ * анимации выхода снимал и стартовый экран — оставался пустой NavHost.
+ */
+private fun NavHostController.popBackSafely() {
+    val current = currentBackStackEntry ?: return
+    if (current.lifecycle.currentState != Lifecycle.State.RESUMED || previousBackStackEntry == null) return
+    popBackStack()
 }
 
 private fun NavDestination?.isOn(item: TopLevelDestination) =
