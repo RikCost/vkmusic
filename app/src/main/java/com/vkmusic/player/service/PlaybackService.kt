@@ -31,18 +31,27 @@ import com.vkmusic.di.ApplicationScope
 import com.vkmusic.player.audio.AudioEffects
 import com.vkmusic.player.audio.EqualizerAudioProcessor
 import com.vkmusic.player.audio.LoudnessNormalizerAudioProcessor
+import com.vkmusic.player.queue.MAX_RESOLVE_ATTEMPTS
 import com.vkmusic.player.queue.QueueExtender
 import com.vkmusic.player.queue.QueueStore
 import com.vkmusic.player.queue.SavedQueue
+import com.vkmusic.player.queue.UnresolvedAction
+import com.vkmusic.player.queue.canRefreshUrl
+import com.vkmusic.player.queue.httpResponseCode
+import com.vkmusic.player.queue.isExpiredLinkResponse
 import com.vkmusic.player.queue.needsUrl
 import com.vkmusic.player.queue.toMediaItem
 import com.vkmusic.player.queue.toTrack
+import com.vkmusic.player.queue.unresolvedAction
 import com.vkmusic.player.queue.withResolvedUri
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -63,6 +72,15 @@ class PlaybackService : MediaSessionService() {
     private var saveLatest = true
     private var extending = false
     private val resolving = mutableSetOf<String>()
+
+    // Сколько раз подряд запрашивали ссылку трека; счётчик сбрасывается, когда трек становится текущим.
+    private val resolveAttempts = mutableMapOf<String, Int>()
+    private var consecutiveSkips = 0
+    private var retryJob: Job? = null
+
+    // Идёт подмена элемента очереди: промежуточные переходы Media3 (вставка нового + удаление старого) — не настоящие.
+    private var replacing = false
+    private var currentId: String? = null
 
     // Треки, которым уже выдали новую ссылку после ошибки: второй раз ошибка — не просроченная ссылка.
     private val refreshedAfterError = mutableSetOf<String>()
@@ -137,37 +155,50 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    private inner class QueueListener(private val player: Player) : Player.Listener {
+    private inner class QueueListener(private val player: ExoPlayer) : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            if (replacing) return
+            // Если подмена шла из колбэка плеера, её события приходят уже после неё: смотрим на фактический
+            // текущий трек, а не на mediaItem промежуточного перехода.
+            val id = player.currentMediaItem?.mediaId
+            if (id != currentId) {
+                currentId = id
+                refreshedAfterError.clear()
+                id?.let(resolveAttempts::remove)
+                retryJob?.cancel()
+            }
             resolveAhead(player)
             extendQueueIfNeeded(player)
             saveQueue(player)
         }
 
         override fun onTimelineChanged(timeline: Timeline, reason: Int) {
-            resolveAhead(player)
+            if (!replacing) resolveAhead(player)
         }
 
         override fun onPlayerError(error: PlaybackException) {
             val item = player.currentMediaItem ?: return
             if (item.needsUrl) {
-                resolveAhead(player)
+                recoverUnresolved(player)
                 return
             }
-            // Ссылка веб-VK истекла (трек долго лежал в очереди или в списке): берём новую по хешам.
-            val track = item.toTrack()?.takeIf { it.webHashes != null && it.url != null } ?: return
+            // Ссылка веб-VK истекла (трек долго лежал в очереди или в списке): берём новую по хешам / access_key.
+            // Прочие ошибки (формат, обрыв сети) новой ссылкой не лечатся.
+            val code = error.httpResponseCode() ?: return
+            if (!isExpiredLinkResponse(code)) return
+            val track = item.toTrack()?.takeIf { it.canRefreshUrl } ?: return
             if (!refreshedAfterError.add(track.id)) return
-            player.replaceMediaItem(player.currentMediaItemIndex, track.copy(url = null, isHls = false).toMediaItem())
+            replaceItem(player, player.currentMediaItemIndex, track.copy(url = null, isHls = false).toMediaItem())
             resolveAhead(player)
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            if (isPlaying) refreshedAfterError.clear() else saveQueue(player)
+            if (isPlaying) consecutiveSkips = 0 else saveQueue(player)
         }
     }
 
     // Веб-VK: ссылка трека получается по хешам, когда до него доходит очередь (текущий и пара следующих).
-    private fun resolveAhead(player: Player) {
+    private fun resolveAhead(player: ExoPlayer) {
         if (player.mediaItemCount == 0) return
         val timeline = player.currentTimeline
         val indices = mutableListOf<Int>()
@@ -176,21 +207,75 @@ class PlaybackService : MediaSessionService() {
             indices += index
             index = if (timeline.isEmpty) C.INDEX_UNSET else timeline.getNextWindowIndex(index, Player.REPEAT_MODE_OFF, player.shuffleModeEnabled)
         }
-        val pending = indices.map(player::getMediaItemAt).filter { it.needsUrl && it.mediaId !in resolving }.mapNotNull { it.toTrack() }
+        val pending = indices.map(player::getMediaItemAt)
+            .filter { it.needsUrl && it.mediaId !in resolving && (resolveAttempts[it.mediaId] ?: 0) < MAX_RESOLVE_ATTEMPTS }
+            .mapNotNull { it.toTrack() }
         if (pending.isEmpty()) return
-        resolving += pending.map { it.id }
+        val ids = pending.map { it.id }.toSet()
+        resolving += ids
+        ids.forEach { resolveAttempts[it] = (resolveAttempts[it] ?: 0) + 1 }
         scope.launch {
-            val resolved = trackUrlResolver.resolve(pending).filter { it.url != null }
-            resolving -= pending.map { it.id }.toSet()
-            for (track in resolved) {
-                val position = (0 until player.mediaItemCount).firstOrNull {
-                    val item = player.getMediaItemAt(it)
-                    item.mediaId == track.id && item.needsUrl
-                } ?: continue
-                val failedHere = position == player.currentMediaItemIndex && player.playerError != null
-                player.replaceMediaItem(position, track.toMediaItem())
-                if (failedHere) player.prepare()
+            try {
+                val resolved = trackUrlResolver.resolve(pending).filter { it.url != null }
+                // Резолвер глотает исключения, и отмену тоже: без проверки подмена пошла бы в освобождённый плеер.
+                ensureActive()
+                for (track in resolved) {
+                    resolveAttempts -= track.id
+                    val position = (0 until player.mediaItemCount).firstOrNull {
+                        val item = player.getMediaItemAt(it)
+                        item.mediaId == track.id && item.needsUrl
+                    } ?: continue
+                    val failedHere = position == player.currentMediaItemIndex && player.playerError != null
+                    replaceItem(player, position, track.toMediaItem())
+                    if (failedHere) player.prepare()
+                }
+            } finally {
+                // Только после подмены: события плеера внутри неё снова зовут resolveAhead,
+                // и треки, которые ещё подменяются, не должны запрашиваться повторно.
+                resolving -= ids
             }
+            recoverUnresolved(player)
+        }
+    }
+
+    /**
+     * Подменить элемент очереди. URI у нового другой, поэтому Media3 не обновляет элемент, а вставляет новый и
+     * удаляет старый: перемешанный порядок ставит вставленный в случайное место (следующие треки пропускаются),
+     * а текущий трек на миг сменяется другим и теряет позицию. Порядок и позиция возвращаются как были.
+     */
+    private fun replaceItem(player: ExoPlayer, index: Int, item: MediaItem) {
+        val shuffleOrder = player.shuffleOrder
+        val isCurrent = index == player.currentMediaItemIndex
+        val position = player.currentPosition
+        replacing = true
+        try {
+            player.replaceMediaItem(index, item)
+            player.shuffleOrder = shuffleOrder
+            if (isCurrent) player.seekTo(index, position)
+        } finally {
+            replacing = false
+        }
+    }
+
+    // Текущий трек так и не получил ссылку, а плеер встал на заглушке: ещё попытка или следующий трек.
+    private fun recoverUnresolved(player: ExoPlayer) {
+        val item = player.currentMediaItem ?: return
+        if (player.playerError == null || !item.needsUrl || item.mediaId in resolving) return
+        val attempts = resolveAttempts[item.mediaId] ?: 0
+        when (unresolvedAction(attempts, consecutiveSkips, player.hasNextMediaItem())) {
+            UnresolvedAction.RETRY -> {
+                retryJob?.cancel()
+                retryJob = scope.launch {
+                    delay(RESOLVE_RETRY_DELAY_MS * attempts)
+                    resolveAhead(player)
+                }
+            }
+            UnresolvedAction.SKIP -> {
+                consecutiveSkips++
+                player.seekToNextMediaItem()
+                player.prepare()
+            }
+            UnresolvedAction.GIVE_UP -> Unit
         }
     }
 
@@ -247,5 +332,6 @@ class PlaybackService : MediaSessionService() {
         const val EXTEND_THRESHOLD = 2
         const val SAVED_QUEUE_LIMIT = 500
         const val RESOLVE_AHEAD = 3
+        const val RESOLVE_RETRY_DELAY_MS = 1_000L
     }
 }

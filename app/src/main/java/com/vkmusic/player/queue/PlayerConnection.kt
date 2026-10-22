@@ -9,13 +9,17 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.vkmusic.data.api.VkAudioRepository
 import com.vkmusic.data.model.Track
+import com.vkmusic.data.repository.DownloadRepository
+import com.vkmusic.data.repository.DownloadStatus
 import com.vkmusic.data.repository.SettingsRepository
 import com.vkmusic.data.repository.TrackUrlResolver
 import com.vkmusic.player.service.PlaybackService
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,6 +37,7 @@ class PlayerConnection @Inject constructor(
     private val queueStore: QueueStore,
     private val queueExtender: QueueExtender,
     private val trackUrlResolver: TrackUrlResolver,
+    private val downloadRepository: DownloadRepository,
 ) {
     private val _player = MutableStateFlow<Player?>(null)
     val player: StateFlow<Player?> = _player.asStateFlow()
@@ -40,6 +45,9 @@ class PlayerConnection @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var restoreAttempted = false
+
+    // Запуск очереди (playQueue / restoreLatest) ждёт ссылки из сети; forgetQueue (выход из аккаунта) его отменяет.
+    private var startJob: Job? = null
 
     fun connect() {
         if (controllerFuture != null) return
@@ -79,13 +87,25 @@ class PlayerConnection @Inject constructor(
         queueExtender.source = continuation
         val startId = tracks.getOrNull(startIndex)?.id
         val start = if (shuffle) playable.indices.random() else playable.indexOfFirst { it.id == startId }.coerceAtLeast(0)
-        // Стартовому треку ссылка нужна сразу; остальные сервис получит по мере продвижения очереди.
-        scope.launch {
-            val first = trackUrlResolver.resolve(listOf(playable[start])).first()
+        startJob?.cancel()
+        startJob = scope.launch {
+            // Стартовому треку ссылка нужна сразу; остальные сервис получит по мере продвижения очереди.
+            // Не получилась — старт с запасного трека, как сделал бы сервис, исчерпав попытки: иначе очередь встанет.
+            var resolved = trackUrlResolver.resolve(listOf(playable[start]))
+            var startIndex = start
+            if (resolved.first().url == null) {
+                val fallback = fallbackStarts(playable.size, start, shuffle, START_FALLBACKS)
+                val more = trackUrlResolver.resolve(fallback.map(playable::get))
+                more.indexOfFirst { it.url != null }.takeIf { it >= 0 }?.let { startIndex = fallback[it] }
+                resolved = resolved + more
+            }
+            // Резолвер глотает исключения, и отмену тоже.
+            ensureActive()
             if (_player.value !== player) return@launch
-            val items = playable.map { if (it.id == first.id) first.toMediaItem() else it.toMediaItem() }
+            val withUrls = resolved.filter { it.url != null }.associateBy { it.id }
+            val items = playable.map { (withUrls[it.id] ?: it).toMediaItem() }
             player.shuffleModeEnabled = shuffle
-            player.setMediaItems(items, start, 0L)
+            player.setMediaItems(items, startIndex, 0L)
             player.prepare()
             player.play()
         }
@@ -112,25 +132,29 @@ class PlayerConnection @Inject constructor(
     }
 
     fun forgetQueue() {
+        startJob?.cancel()
         queueExtender.source = null
         scope.launch { queueStore.clear() }
     }
 
     // «Сохранять текущий трек» / «Воспроизводить при запуске» Meridius: один раз за жизнь процесса,
     // если сервис пуст. Ссылки VK истекают, поэтому перед восстановлением они обновляются через getById;
-    // скачанные треки играют из кэша и со старой ссылкой.
+    // скачанные треки играют из кэша и со ссылкой загрузки.
     private fun restoreLatest(controller: MediaController) {
         if (restoreAttempted) return
         restoreAttempted = true
-        scope.launch {
+        startJob = scope.launch {
             val settings = settingsRepository.settings.first()
             if (!settings.saveLatest || controller.mediaItemCount > 0) return@launch
             val saved = queueStore.load() ?: return@launch
             if (saved.tracks.isEmpty()) return@launch
+            val downloaded = downloadRepository.downloads.value.values
+                .filter { it.status == DownloadStatus.Completed }
+                .associate { it.track.id to it.track }
             // Старые ссылки сбрасываются: веб-треки получат свежие по хешам, остальные — через getByIds.
-            val stale = saved.tracks.map { if (it.webHashes != null) it.copy(url = null) else it }
+            val stale = restoredTracks(saved.tracks, downloaded)
             val fresh = withTimeoutOrNull(REFRESH_TIMEOUT_MS) {
-                runCatching { api.getByIds(stale.filter { it.webHashes == null }) }.getOrNull()
+                runCatching { api.getByIds(stale.filter { it.webHashes == null && it.id !in downloaded }) }.getOrNull()
             }?.associateBy { it.id }.orEmpty()
             var tracks = stale.map { old -> fresh[old.id]?.takeIf { it.url != null } ?: old }.filter { it.isPlayable }
             if (tracks.isEmpty()) return@launch
@@ -138,6 +162,7 @@ class PlayerConnection @Inject constructor(
             // Иначе плеер начнёт с заглушки и потеряет сохранённую позицию.
             val current = trackUrlResolver.resolve(listOf(tracks[index])).first()
             tracks = tracks.toMutableList().also { it[index] = current }
+            ensureActive()
             if (_player.value !== controller || controller.mediaItemCount > 0) return@launch
             controller.setMediaItems(tracks.map { it.toMediaItem() }, index, saved.positionMs)
             controller.prepare()
@@ -147,5 +172,6 @@ class PlayerConnection @Inject constructor(
 
     private companion object {
         const val REFRESH_TIMEOUT_MS = 10_000L
+        const val START_FALLBACKS = 3
     }
 }

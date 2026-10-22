@@ -33,14 +33,29 @@ abstract class FloatPcmAudioProcessor : BaseAudioProcessor() {
 
     private var bypassing = false
 
+    // Новый формат Media3 включает только на flush(): до него ещё идут буферы прежнего, и [inputAudioFormat]
+    // (по нему читается кодировка) тоже прежний. Частота и каналы ждут flush вместе с ним.
+    private var pendingSampleRate = 0
+    private var pendingChannelCount = 0
+    private var formatPending = false
+
     override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT && inputAudioFormat.encoding != C.ENCODING_PCM_FLOAT) {
             return AudioFormat.NOT_SET
         }
-        sampleRate = inputAudioFormat.sampleRate
-        channelCount = inputAudioFormat.channelCount
-        resetState()
+        pendingSampleRate = inputAudioFormat.sampleRate
+        pendingChannelCount = inputAudioFormat.channelCount
+        formatPending = true
         return inputAudioFormat
+    }
+
+    // flush() бывает и при перемотке — тогда фильтры и усиление нормализатора остаются как были.
+    override fun onFlush() {
+        if (!formatPending) return
+        formatPending = false
+        sampleRate = pendingSampleRate
+        channelCount = pendingChannelCount
+        resetState()
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
@@ -73,6 +88,7 @@ abstract class FloatPcmAudioProcessor : BaseAudioProcessor() {
     }
 
     override fun onReset() {
+        formatPending = false
         resetState()
     }
 
