@@ -5,7 +5,7 @@
 десктопного плеера [Meridius](https://github.com/PurpleHorrorRus/Meridius) — как именно, описано в
 [docs/meridius-port.md](docs/meridius-port.md).
 
-- Package: `com.vkmusic`, версия 0.4.2
+- Package: `com.vkmusic`, версия 0.4.3
 - Минимум Android 8.0 (`minSdk 26`), собран против SDK 36 (`targetSdk 36`)
 - UI полностью на русском, строки захардкожены в Compose
 

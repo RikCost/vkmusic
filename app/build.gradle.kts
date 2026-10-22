@@ -8,7 +8,7 @@ plugins {
 
 val versionMajor = 0
 val versionMinor = 4
-val versionPatch = 2
+val versionPatch = 3
 val appVersionName = "$versionMajor.$versionMinor.$versionPatch"
 
 android {
