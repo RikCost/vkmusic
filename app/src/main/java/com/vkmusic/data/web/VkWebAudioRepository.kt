@@ -313,26 +313,40 @@ class VkWebAudioRepository(
         )
     }
 
-    // save_audio_in_playlists с хешем из more_playlists_add (meridius-core addSong/getSaveHash).
-    override suspend fun addToPlaylist(playlist: Playlist, tracks: List<Track>) {
+    override suspend fun addToPlaylist(playlist: Playlist, tracks: List<Track>) =
+        changePlaylist(tracks, add = playlist.playlistId.toString(), remove = "", failure = "Не удалось добавить в плейлист")
+
+    override suspend fun removeFromPlaylist(playlist: Playlist, tracks: List<Track>) =
+        changePlaylist(tracks, add = "", remove = playlist.playlistId.toString(), failure = "Не удалось удалить из плейлиста")
+
+    // save_audio_in_playlists с хешем из more_playlists_add (meridius-core addSong/getSaveHash): тот же
+    // запрос, что у диалога «Добавить в плейлист» VK, — add_pl_ids добавляет, remove_pl_ids убирает.
+    // Треки независимы, поэтому идут параллельно: несколько треков — не несколько ожиданий подряд.
+    private suspend fun changePlaylist(tracks: List<Track>, add: String, remove: String, failure: String) {
         val me = userIdProvider()
-        for (track in tracks) {
-            val dialog = web.alAudio(
-                mapOf("act" to "more_playlists_add", "audio_id" to track.audioId, "audio_owner_id" to track.ownerId, "owner_id" to me),
-            )
-            val hash = dialog.getOrNull(2).text()?.let { SAVE_HASH_REGEX.find(it)?.groupValues?.get(1) }
-                ?: throw IllegalStateException("Не удалось добавить в плейлист")
-            web.alAudio(
-                mapOf(
-                    "act" to "save_audio_in_playlists",
-                    "add_pl_ids" to playlist.playlistId,
-                    "audio_id" to track.audioId,
-                    "audio_owner_id" to track.ownerId,
-                    "hash" to hash,
-                    "owner_id" to me,
-                    "remove_pl_ids" to "",
-                ),
-            )
+        coroutineScope {
+            tracks.map { track ->
+                async {
+                    reloadLimit.withPermit {
+                        val dialog = web.alAudio(
+                            mapOf("act" to "more_playlists_add", "audio_id" to track.audioId, "audio_owner_id" to track.ownerId, "owner_id" to me),
+                        )
+                        val hash = dialog.getOrNull(2).text()?.let { SAVE_HASH_REGEX.find(it)?.groupValues?.get(1) }
+                            ?: throw IllegalStateException(failure)
+                        web.alAudio(
+                            mapOf(
+                                "act" to "save_audio_in_playlists",
+                                "add_pl_ids" to add,
+                                "audio_id" to track.audioId,
+                                "audio_owner_id" to track.ownerId,
+                                "hash" to hash,
+                                "owner_id" to me,
+                                "remove_pl_ids" to remove,
+                            ),
+                        )
+                    }
+                }
+            }.awaitAll()
         }
     }
 

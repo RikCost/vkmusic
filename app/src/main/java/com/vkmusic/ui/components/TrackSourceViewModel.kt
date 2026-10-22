@@ -25,6 +25,11 @@ abstract class TrackSourceViewModel : ViewModel() {
 
     protected abstract suspend fun load(): List<Track>
 
+    /** Изменить показанный список сразу, не дожидаясь перезагрузки. */
+    protected fun updateTracks(transform: (List<Track>) -> List<Track>) {
+        _state.update { it.copy(data = transform(it.data)) }
+    }
+
     fun refresh() {
         job?.cancel()
         job = viewModelScope.launch {

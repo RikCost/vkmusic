@@ -122,16 +122,25 @@ object WebAudioParser {
     }
 
     /** get_lyrics: `lyrics.timestamps[{begin, line}]`, иначе `lyrics.text[]` или `lyrics.ugc[]`. */
+    // Как в MeridiusNova (lyrics.get.ts): поля проверяются по очереди, пустое или null-поле не мешает
+    // следующему — иначе при "text": null текст из ugc не находился. Текст может прийти и одной строкой с <br>.
     fun lyrics(element: JsonElement?): Lyrics? {
         val lyrics = (element as? JsonObject)?.get("lyrics") as? JsonObject ?: return null
         val timed = (lyrics["timestamps"] as? JsonArray).orEmpty().mapNotNull { line ->
             val obj = line as? JsonObject ?: return@mapNotNull null
-            LyricLine(unescape(obj["line"].text()), (obj["begin"] as? JsonPrimitive)?.longOrNull)
+            val begin = (obj["begin"] as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull()?.toLong()
+            LyricLine(unescape(obj["line"].text()), begin)
         }
         if (timed.isNotEmpty()) return Lyrics(timed, isSynced = timed.any { it.startMs != null })
-        val text = ((lyrics["text"] ?: lyrics["ugc"]) as? JsonArray).orEmpty().map { unescape(it.text()) }
-        return text.takeIf { it.isNotEmpty() }?.let { lines -> Lyrics(lines.map { LyricLine(it) }, isSynced = false) }
+        val text = listOf("text", "ugc").firstNotNullOfOrNull { key -> textLines(lyrics[key]).takeIf { it.isNotEmpty() } }
+        return text?.let { lines -> Lyrics(lines.map { LyricLine(it) }, isSynced = false) }
     }
+
+    private fun textLines(element: JsonElement?): List<String> = when (element) {
+        is JsonArray -> element.map { unescape(it.text()) }
+        is JsonPrimitive -> element.text()?.let { unescape(it).lines() }.orEmpty()
+        else -> emptyList()
+    }.takeIf { lines -> lines.any { it.isNotBlank() } }.orEmpty()
 
     /** Как `unescape` Meridius (textContent): HTML-сущности раскрываются, теги отбрасываются. */
     fun unescape(value: String?): String {

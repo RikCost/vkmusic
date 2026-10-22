@@ -108,6 +108,22 @@ class WebParsingTest {
     }
 
     @Test
+    fun `lyrics fall back to ugc when text is null`() {
+        val lyrics = requireNotNull(WebAudioParser.lyrics(json.parseToJsonElement("""{"lyrics":{"text":null,"ugc":["one","two"]}}""")))
+        assertFalse(lyrics.isSynced)
+        assertEquals(listOf("one", "two"), lyrics.lines.map { it.text })
+    }
+
+    @Test
+    fun `lyrics accept text as one string and fractional begin`() {
+        val plain = requireNotNull(WebAudioParser.lyrics(json.parseToJsonElement("""{"lyrics":{"text":"one<br>two"}}""")))
+        assertEquals(listOf("one", "two"), plain.lines.map { it.text })
+        val timed = requireNotNull(WebAudioParser.lyrics(json.parseToJsonElement("""{"lyrics":{"timestamps":[{"begin":"1500.0","line":"x"}]}}""")))
+        assertEquals(1500L, timed.lines.single().startMs)
+        assertNull(WebAudioParser.lyrics(json.parseToJsonElement("""{"lyrics":{"text":[]}}""")))
+    }
+
+    @Test
     fun `html catalog rows are read from data-audio`() {
         val html = """<div class="audio_row" data-audio="[1,2,&quot;&quot;,&quot;T&quot;,&quot;P&quot;,60]" data-x="1"></div>"""
         val tracks = WebAudioParser.tracksFromHtml(html, json, 42)

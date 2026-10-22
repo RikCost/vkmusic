@@ -41,7 +41,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -81,15 +80,19 @@ fun TrackList(
     onPlay: ((Int) -> Unit)? = null,
     header: LazyListScope.() -> Unit = {},
     actions: TrackActionsViewModel = hiltViewModel(),
+    extraMenu: TrackExtraMenu? = null,
 ) {
     TrackActionsMessages(actions)
     val currentId = currentTrackId(actions)
 
     LazyColumn(modifier = modifier.fillMaxSize(), contentPadding = contentPadding) {
         header()
-        trackItems(tracks, currentId, actions, onPlay)
+        trackItems(tracks, currentId, actions, onPlay, extraMenu = extraMenu)
     }
 }
+
+/** Дополнительные пункты меню трека, зависящие от экрана (например, «Удалить из плейлиста»). */
+typealias TrackExtraMenu = @Composable (track: Track, close: () -> Unit) -> Unit
 
 /** Строки треков для встраивания в чужой LazyColumn (главная, страница исполнителя). */
 fun LazyListScope.trackItems(
@@ -98,6 +101,7 @@ fun LazyListScope.trackItems(
     actions: TrackActionsViewModel,
     onPlay: ((Int) -> Unit)? = null,
     keyPrefix: String = "",
+    extraMenu: TrackExtraMenu? = null,
 ) {
     itemsIndexed(tracks, key = { index, track -> "$keyPrefix${index}_${track.id}" }) { index, track ->
         TrackRow(
@@ -106,6 +110,7 @@ fun LazyListScope.trackItems(
             isCurrent = track.id == currentId,
             onClick = { onPlay?.invoke(index) ?: actions.play(tracks, index) },
             actions = actions,
+            extraMenu = extraMenu?.let { menu -> { close -> menu(track, close) } },
         )
     }
 }

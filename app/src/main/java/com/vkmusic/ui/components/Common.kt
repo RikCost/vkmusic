@@ -29,9 +29,7 @@ import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -233,6 +231,7 @@ fun TrackSourcePage(
     filter: String = "",
     header: LazyListScope.() -> Unit = {},
     actions: TrackActionsViewModel = hiltViewModel(),
+    extraMenu: TrackExtraMenu? = null,
 ) {
     val tracks = state.data.filteredBy(filter)
     PullToRefreshBox(
@@ -244,6 +243,7 @@ fun TrackSourcePage(
             tracks = tracks,
             contentPadding = contentPadding,
             actions = actions,
+            extraMenu = extraMenu,
             header = {
                 header()
                 when {

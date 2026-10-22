@@ -65,6 +65,8 @@ import com.vkmusic.ui.screens.search.ExploreScreen
 import com.vkmusic.ui.screens.settings.SettingsScreen
 import com.vkmusic.ui.screens.similar.SimilarScreen
 import com.vkmusic.ui.theme.MuVkTheme
+import com.vkmusic.ui.components.pressScale
+import androidx.compose.foundation.interaction.MutableInteractionSource
 
 @Composable
 fun MuVkRoot(viewModel: RootViewModel = hiltViewModel()) {
@@ -141,10 +143,12 @@ private fun MeridiusNavigationBar(selected: TopLevelDestination, onSelect: (TopL
     val colors = MaterialTheme.colorScheme
     NavigationBar(containerColor = colors.surfaceContainer) {
         TopLevelDestination.entries.forEach { item ->
+            val interactionSource = remember { MutableInteractionSource() }
             NavigationBarItem(
                 selected = item == selected,
                 onClick = { onSelect(item) },
-                icon = { Icon(item.icon, contentDescription = null) },
+                icon = { Icon(item.icon, contentDescription = null, modifier = Modifier.pressScale(interactionSource)) },
+                interactionSource = interactionSource,
                 label = { Text(item.label, style = MaterialTheme.typography.labelSmall) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = colors.primary,

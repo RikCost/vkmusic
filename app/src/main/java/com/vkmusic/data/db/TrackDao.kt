@@ -17,6 +17,20 @@ interface TrackDao {
     @Query("DELETE FROM tracks")
     suspend fun clear()
 
+    @Query("DELETE FROM tracks WHERE id = :id")
+    suspend fun delete(id: String)
+
+    @Query("UPDATE tracks SET position = position + 1")
+    suspend fun shiftPositions()
+
+    /** Новый трек «моей музыки» встаёт первым, как у VK. */
+    @Transaction
+    suspend fun insertFirst(track: TrackEntity) {
+        delete(track.id)
+        shiftPositions()
+        upsertAll(listOf(track.copy(position = 0)))
+    }
+
     @Transaction
     suspend fun replaceAll(tracks: List<TrackEntity>) {
         clear()

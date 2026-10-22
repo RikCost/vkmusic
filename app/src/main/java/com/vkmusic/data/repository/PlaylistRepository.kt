@@ -6,6 +6,7 @@ import com.vkmusic.data.model.Track
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -38,16 +39,29 @@ class PlaylistRepository @Inject constructor(
     suspend fun tracks(ownerId: Long, playlistId: Long, accessKey: String?): List<Track> =
         api.getPlaylistTracks(ownerId, playlistId, accessKey)
 
+    // Новый плейлист и изменения состава отражаются в списке сразу: перезагрузка всех плейлистов
+    // ради одного счётчика стоила секунды ожидания после каждого нажатия.
     suspend fun create(title: String, tracks: List<Track> = emptyList()): Playlist {
         val playlist = api.createPlaylist(title)
         if (tracks.isNotEmpty()) api.addToPlaylist(playlist, tracks)
-        refresh()
+        _playlists.update { listOf(playlist.copy(trackCount = tracks.size, isEditable = true)) + it.filterNot { p -> p.id == playlist.id } }
         return playlist
     }
 
     suspend fun addTracks(playlist: Playlist, tracks: List<Track>) {
         api.addToPlaylist(playlist, tracks)
-        refresh()
+        changeCount(playlist, tracks.size)
+    }
+
+    suspend fun removeTracks(playlist: Playlist, tracks: List<Track>) {
+        api.removeFromPlaylist(playlist, tracks)
+        changeCount(playlist, -tracks.size)
+    }
+
+    private fun changeCount(playlist: Playlist, delta: Int) {
+        _playlists.update { list ->
+            list.map { if (it.id == playlist.id) it.copy(trackCount = (it.trackCount + delta).coerceAtLeast(0)) else it }
+        }
     }
 
     suspend fun edit(playlist: Playlist, title: String, description: String) {

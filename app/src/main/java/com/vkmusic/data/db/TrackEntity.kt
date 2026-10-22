@@ -24,15 +24,17 @@ data class TrackEntity(
     val webHashes: String? = null,
 )
 
+// Ссылки веб-VK подписаны и через несколько часов перестают открываться. Такой трек из кэша идёт
+// без ссылки: плеер получит свежую по хешам (reload_audios) перед воспроизведением.
 fun TrackEntity.toTrack() = Track(
     ownerId = ownerId,
     audioId = audioId,
     title = title,
     artist = artist,
     durationSec = durationSec,
-    url = url,
+    url = url.takeIf { webHashes == null },
     coverUrl = coverUrl,
-    isHls = isHls,
+    isHls = isHls && webHashes == null,
     albumTitle = albumTitle,
     isExplicit = isExplicit,
     hasLyrics = hasLyrics,
@@ -48,7 +50,7 @@ fun Track.toEntity(position: Int) = TrackEntity(
     title = title,
     artist = artist,
     durationSec = durationSec,
-    url = url,
+    url = url.takeIf { webHashes == null },
     coverUrl = coverUrl,
     isHls = isHls,
     position = position,

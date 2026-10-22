@@ -144,6 +144,18 @@ class VkApiAudioRepository(
         )
     }
 
+    override suspend fun removeFromPlaylist(playlist: Playlist, tracks: List<Track>) {
+        client.call(
+            "audio.removeFromPlaylist",
+            JsonElement.serializer(),
+            mapOf(
+                "owner_id" to playlist.ownerId,
+                "playlist_id" to playlist.playlistId,
+                "audio_ids" to tracks.joinToString(",") { it.id },
+            ),
+        )
+    }
+
     override suspend fun search(query: String, offset: Int, count: Int): List<Track> =
         audioItems("audio.search", mapOf("q" to query, "offset" to offset, "count" to count, "auto_complete" to 1))
 

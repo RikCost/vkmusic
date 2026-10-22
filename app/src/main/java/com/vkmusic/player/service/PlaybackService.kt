@@ -64,6 +64,9 @@ class PlaybackService : MediaSessionService() {
     private var extending = false
     private val resolving = mutableSetOf<String>()
 
+    // Треки, которым уже выдали новую ссылку после ошибки: второй раз ошибка — не просроченная ссылка.
+    private val refreshedAfterError = mutableSetOf<String>()
+
     override fun onCreate() {
         super.onCreate()
         setMediaNotificationProvider(
@@ -146,11 +149,20 @@ class PlaybackService : MediaSessionService() {
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            if (player.currentMediaItem?.needsUrl == true) resolveAhead(player)
+            val item = player.currentMediaItem ?: return
+            if (item.needsUrl) {
+                resolveAhead(player)
+                return
+            }
+            // Ссылка веб-VK истекла (трек долго лежал в очереди или в списке): берём новую по хешам.
+            val track = item.toTrack()?.takeIf { it.webHashes != null && it.url != null } ?: return
+            if (!refreshedAfterError.add(track.id)) return
+            player.replaceMediaItem(player.currentMediaItemIndex, track.copy(url = null, isHls = false).toMediaItem())
+            resolveAhead(player)
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            if (!isPlaying) saveQueue(player)
+            if (isPlaying) refreshedAfterError.clear() else saveQueue(player)
         }
     }
 

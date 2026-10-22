@@ -29,6 +29,7 @@ interface VkAudioRepository {
     suspend fun deletePlaylist(playlist: Playlist)
     suspend fun followPlaylist(playlist: Playlist)
     suspend fun addToPlaylist(playlist: Playlist, tracks: List<Track>)
+    suspend fun removeFromPlaylist(playlist: Playlist, tracks: List<Track>)
 
     suspend fun search(query: String, offset: Int = 0, count: Int = 50): List<Track>
     suspend fun searchAlbums(query: String, count: Int = 20): List<Playlist>

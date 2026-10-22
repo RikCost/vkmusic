@@ -16,13 +16,14 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.PlaylistRemove
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.vkmusic.ui.components.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -84,6 +85,7 @@ fun PlaylistScreen(
         }
     }
 
+    val isEditable = (libraryCopy ?: details).isEditable
     Column(Modifier.fillMaxSize()) {
         BackTopBar(title = "", onBack = navigator::back)
         TrackSourcePage(
@@ -94,12 +96,22 @@ fun PlaylistScreen(
             showPlayAll = false,
             filter = filter,
             actions = actions,
+            extraMenu = if (isEditable) {
+                { track, close ->
+                    MenuAction("Удалить из плейлиста", Icons.Rounded.PlaylistRemove) {
+                        close()
+                        viewModel.removeTrack(track)
+                    }
+                }
+            } else {
+                null
+            },
             header = {
                 item {
                     PlaylistHeader(
                         playlist = details,
                         tracks = state.data,
-                        isEditable = (libraryCopy ?: details).isEditable,
+                        isEditable = isEditable,
                         isInLibrary = libraryCopy != null,
                         actions = actions,
                         onFollow = viewModel::follow,

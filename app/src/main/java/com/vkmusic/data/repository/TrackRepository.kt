@@ -38,16 +38,22 @@ class TrackRepository @Inject constructor(
         dao.replaceAll(tracks.mapIndexed { index, track -> track.toEntity(index) })
     }
 
+    // Один запрос к VK и правка одной строки в базе: полная перезагрузка «моей музыки» после каждого
+    // нажатия занимала секунды. Целиком список перечитывается, только если VK не вернул добавленную копию.
     suspend fun addToLibrary(track: Track) {
-        api.addAudio(track)
-        refreshLibrary()
+        val added = api.addAudio(track)
+        if (added.audioId == track.audioId && added.webHashes == null) {
+            refreshLibrary()
+        } else {
+            dao.insertFirst(added.toEntity(0))
+        }
     }
 
     suspend fun removeFromLibrary(track: Track) {
         val library = library.first()
         val own = library.firstOrNull { it.id == track.id } ?: library.firstOrNull { it.matchKey == track.matchKey } ?: track
         api.deleteAudio(own)
-        refreshLibrary()
+        dao.delete(own.id)
     }
 
     private companion object {
