@@ -3,6 +3,7 @@ package com.vkmusic.data.web
 import com.vkmusic.data.model.LyricLine
 import com.vkmusic.data.model.Lyrics
 import com.vkmusic.data.model.Playlist
+import com.vkmusic.data.model.PlaylistChoice
 import com.vkmusic.data.model.Track
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -39,6 +40,7 @@ object WebAudioParser {
     private val backgroundRegex = Regex("background-image:\\s?url\\('?(.*?)'?\\)")
     private val tagRegex = Regex("<[^>]*>")
     private val numericEntityRegex = Regex("&#(x?)([0-9a-fA-F]+);")
+    private val addToPlaylistsRegex = Regex("""addToPlaylistsBoxInit\(\s*-?\d+\s*,\s*-?\d+\s*,\s*-?\d+\s*,\s*(\[.*])\s*,\s*'[^']*'\s*\)""")
 
     fun track(element: JsonElement?, userId: Long): Track? {
         val item = element as? JsonArray ?: return null
@@ -119,6 +121,26 @@ object WebAudioParser {
             followHash = obj.firstText("followHash", "follow_hash"),
             isFollowed = followed,
         )
+    }
+
+    /**
+     * more_playlists_add: окно VK «Добавить в плейлист» инициализируется вызовом
+     * `AudioUtils.addToPlaylistsBoxInit(owner, me, audio, [[owner, id, "название", треков, есть_ли_трек], …], 'hash')`.
+     */
+    fun playlistChoices(script: String, json: Json): List<PlaylistChoice>? {
+        val list = addToPlaylistsRegex.find(script)?.groupValues?.get(1) ?: return null
+        val rows = runCatching { json.parseToJsonElement(list) }.getOrNull() as? JsonArray ?: return null
+        return rows.mapNotNull { row ->
+            val item = row as? JsonArray ?: return@mapNotNull null
+            val playlist = Playlist(
+                ownerId = item.text(0)?.toLongOrNull() ?: return@mapNotNull null,
+                playlistId = item.text(1)?.toLongOrNull() ?: return@mapNotNull null,
+                title = unescape(item.text(2)),
+                trackCount = item.text(3)?.toIntOrNull() ?: 0,
+                isEditable = true,
+            )
+            PlaylistChoice(playlist, containsTrack = item.getOrNull(4).isTruthy())
+        }
     }
 
     /** get_lyrics: `lyrics.timestamps[{begin, line}]`, иначе `lyrics.text[]` или `lyrics.ugc[]`. */

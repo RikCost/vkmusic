@@ -25,3 +25,6 @@ data class Playlist(
     val shareUrl: String
         get() = "https://vk.com/music/playlist/${id}" + (accessKey?.let { "_$it" } ?: "")
 }
+
+/** Свой плейлист в окне «Добавить в плейлист»: [containsTrack] — трек в нём уже есть. */
+data class PlaylistChoice(val playlist: Playlist, val containsTrack: Boolean)

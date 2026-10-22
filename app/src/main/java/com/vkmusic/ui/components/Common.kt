@@ -231,7 +231,6 @@ fun TrackSourcePage(
     filter: String = "",
     header: LazyListScope.() -> Unit = {},
     actions: TrackActionsViewModel = hiltViewModel(),
-    extraMenu: TrackExtraMenu? = null,
 ) {
     val tracks = state.data.filteredBy(filter)
     PullToRefreshBox(
@@ -243,7 +242,6 @@ fun TrackSourcePage(
             tracks = tracks,
             contentPadding = contentPadding,
             actions = actions,
-            extraMenu = extraMenu,
             header = {
                 header()
                 when {

@@ -7,6 +7,7 @@ import com.vkmusic.data.model.Friend
 import com.vkmusic.data.model.Lyrics
 import com.vkmusic.data.model.MixCategory
 import com.vkmusic.data.model.Playlist
+import com.vkmusic.data.model.PlaylistChoice
 import com.vkmusic.data.model.Profile
 import com.vkmusic.data.model.Track
 import kotlinx.coroutines.async
@@ -311,6 +312,16 @@ class VkWebAudioRepository(
         web.alAudio(
             mapOf("act" to "follow_playlist", "hash" to hash, "playlist_id" to playlist.playlistId, "playlist_owner_id" to playlist.ownerId),
         )
+    }
+
+    // Тот же more_playlists_add, что даёт хеш сохранения: VK отдаёт в нём свои плейлисты с отметкой трека.
+    override suspend fun getPlaylistsForTrack(track: Track): List<PlaylistChoice> {
+        val me = userIdProvider()
+        val dialog = web.alAudio(
+            mapOf("act" to "more_playlists_add", "audio_id" to track.audioId, "audio_owner_id" to track.ownerId, "owner_id" to me),
+        )
+        return dialog.getOrNull(2).text()?.let { WebAudioParser.playlistChoices(it, json) }
+            ?: official.getPlaylistsForTrack(track)
     }
 
     override suspend fun addToPlaylist(playlist: Playlist, tracks: List<Track>) =

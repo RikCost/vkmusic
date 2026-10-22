@@ -8,6 +8,7 @@ import com.vkmusic.data.model.Lyrics
 import com.vkmusic.data.model.MixCategory
 import com.vkmusic.data.model.MixOption
 import com.vkmusic.data.model.Playlist
+import com.vkmusic.data.model.PlaylistChoice
 import com.vkmusic.data.model.Profile
 import com.vkmusic.data.model.Track
 import kotlinx.serialization.builtins.ListSerializer
@@ -155,6 +156,10 @@ class VkApiAudioRepository(
             ),
         )
     }
+
+    // Официальный API не говорит, в каких плейлистах трек, — только список своих плейлистов.
+    override suspend fun getPlaylistsForTrack(track: Track): List<PlaylistChoice> =
+        getMyPlaylists().filter { it.isEditable }.map { PlaylistChoice(it, containsTrack = false) }
 
     override suspend fun search(query: String, offset: Int, count: Int): List<Track> =
         audioItems("audio.search", mapOf("q" to query, "offset" to offset, "count" to count, "auto_complete" to 1))

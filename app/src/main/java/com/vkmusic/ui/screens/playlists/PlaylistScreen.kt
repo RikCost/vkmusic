@@ -16,7 +16,6 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.PlaylistRemove
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.Share
@@ -96,16 +95,6 @@ fun PlaylistScreen(
             showPlayAll = false,
             filter = filter,
             actions = actions,
-            extraMenu = if (isEditable) {
-                { track, close ->
-                    MenuAction("Удалить из плейлиста", Icons.Rounded.PlaylistRemove) {
-                        close()
-                        viewModel.removeTrack(track)
-                    }
-                }
-            } else {
-                null
-            },
             header = {
                 item {
                     PlaylistHeader(

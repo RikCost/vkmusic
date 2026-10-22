@@ -2,6 +2,7 @@
 
 package com.vkmusic.ui.components
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +25,8 @@ import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
@@ -64,7 +67,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import androidx.media3.ui.compose.state.rememberCurrentMediaItemState
-import com.vkmusic.data.model.Playlist
+import com.vkmusic.data.model.PlaylistChoice
 import com.vkmusic.data.model.Track
 import com.vkmusic.data.export.ExportStatus
 import com.vkmusic.data.repository.DownloadStatus
@@ -80,19 +83,15 @@ fun TrackList(
     onPlay: ((Int) -> Unit)? = null,
     header: LazyListScope.() -> Unit = {},
     actions: TrackActionsViewModel = hiltViewModel(),
-    extraMenu: TrackExtraMenu? = null,
 ) {
     TrackActionsMessages(actions)
     val currentId = currentTrackId(actions)
 
     LazyColumn(modifier = modifier.fillMaxSize(), contentPadding = contentPadding) {
         header()
-        trackItems(tracks, currentId, actions, onPlay, extraMenu = extraMenu)
+        trackItems(tracks, currentId, actions, onPlay)
     }
 }
-
-/** Дополнительные пункты меню трека, зависящие от экрана (например, «Удалить из плейлиста»). */
-typealias TrackExtraMenu = @Composable (track: Track, close: () -> Unit) -> Unit
 
 /** Строки треков для встраивания в чужой LazyColumn (главная, страница исполнителя). */
 fun LazyListScope.trackItems(
@@ -101,7 +100,6 @@ fun LazyListScope.trackItems(
     actions: TrackActionsViewModel,
     onPlay: ((Int) -> Unit)? = null,
     keyPrefix: String = "",
-    extraMenu: TrackExtraMenu? = null,
 ) {
     itemsIndexed(tracks, key = { index, track -> "$keyPrefix${index}_${track.id}" }) { index, track ->
         TrackRow(
@@ -110,7 +108,6 @@ fun LazyListScope.trackItems(
             isCurrent = track.id == currentId,
             onClick = { onPlay?.invoke(index) ?: actions.play(tracks, index) },
             actions = actions,
-            extraMenu = extraMenu?.let { menu -> { close -> menu(track, close) } },
         )
     }
 }
@@ -256,14 +253,7 @@ private fun TrackMenuButton(
         }
     }
 
-    if (playlistPicker) {
-        PlaylistPickerDialog(
-            actions = actions,
-            onPick = { actions.addToPlaylist(it, listOf(track)) },
-            onCreate = { actions.createPlaylist(it, listOf(track)) },
-            onDismiss = { playlistPicker = false },
-        )
-    }
+    if (playlistPicker) PlaylistPickerDialog(track, actions, onDismiss = { playlistPicker = false })
     if (lyricsOpen) LyricsSheet(track, onDismiss = { lyricsOpen = false })
 }
 
@@ -315,30 +305,34 @@ private fun DownloadBadge(status: DownloadStatus?) {
     Box(Modifier.size(4.dp))
 }
 
+/**
+ * «Добавить в плейлист» как в VK: свои плейлисты с галочкой там, где трек уже есть.
+ * Нажатие добавляет трек или убирает его; окно остаётся открытым, пока не нажать «Готово».
+ */
 @Composable
-fun PlaylistPickerDialog(
-    actions: TrackActionsViewModel,
-    onPick: (Playlist) -> Unit,
-    onCreate: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val playlists by actions.editablePlaylists.collectAsStateWithLifecycle()
+fun PlaylistPickerDialog(track: Track, actions: TrackActionsViewModel, onDismiss: () -> Unit) {
+    val state by actions.playlistPicker.collectAsStateWithLifecycle()
     var creating by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { actions.loadPlaylists() }
+    LaunchedEffect(track.id) { actions.openPlaylistPicker(track) }
+    val close = {
+        actions.closePlaylistPicker()
+        onDismiss()
+    }
 
     if (creating) {
         CreatePlaylistDialog(
             onCreate = {
-                onCreate(it)
-                onDismiss()
+                actions.createPlaylist(it, listOf(track))
+                close()
             },
-            onDismiss = onDismiss,
+            onDismiss = close,
         )
         return
     }
 
+    val current = state?.takeIf { it.track.id == track.id }
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = close,
         title = { Text("Добавить в плейлист") },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -349,23 +343,46 @@ fun PlaylistPickerDialog(
                         modifier = Modifier.clickable { creating = true },
                     )
                 }
-                itemsIndexed(playlists, key = { _, p -> p.id }) { _, playlist ->
-                    ListItem(
-                        headlineContent = { Text(playlist.title) },
-                        supportingContent = { Text("${playlist.trackCount} треков") },
-                        leadingContent = { Artwork(playlist.coverUrl, playlist.id, Modifier.size(40.dp)) },
-                        modifier = Modifier.clickable {
-                            onPick(playlist)
-                            onDismiss()
-                        },
-                    )
+                val choices = current?.choices
+                when {
+                    choices == null -> item { LoadingBox() }
+                    current.error != null -> item { MessageBox(current.error) }
+                    choices.isEmpty() -> item { MessageBox("Своих плейлистов пока нет") }
+                    else -> itemsIndexed(choices, key = { _, choice -> choice.playlist.id }) { _, choice ->
+                        PlaylistChoiceRow(choice, isPending = choice.playlist.id in current.pending) { actions.togglePlaylist(choice) }
+                    }
                 }
             }
         },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+        confirmButton = {
+            TextButton(onClick = close) { Text("Готово") }
         },
+    )
+}
+
+@Composable
+private fun PlaylistChoiceRow(choice: PlaylistChoice, isPending: Boolean, onToggle: () -> Unit) {
+    val playlist = choice.playlist
+    ListItem(
+        headlineContent = { Text(playlist.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        supportingContent = { Text("${playlist.trackCount} треков") },
+        leadingContent = { Artwork(playlist.coverUrl, playlist.id, Modifier.size(40.dp)) },
+        trailingContent = {
+            Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                if (isPending) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else {
+                    AnimatedContent(choice.containsTrack, label = "playlist_check") { checked ->
+                        Icon(
+                            if (checked) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                            contentDescription = if (checked) "Убрать из плейлиста" else "Добавить в плейлист",
+                            tint = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+        modifier = Modifier.clickable(enabled = !isPending, onClick = onToggle),
     )
 }
 

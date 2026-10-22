@@ -108,6 +108,19 @@ class WebParsingTest {
     }
 
     @Test
+    fun `playlist choices are read from add to playlists box`() {
+        val script = """try{uiSearch.init('audio_atp_search', {});} catch (e) {};AudioUtils.addToPlaylistsBoxInit(10, 10, 456, """ +
+            """[[10,404,"слушать &amp; петь",1,1],[10,136,"Для тебя",91,0]], 'abc123')"""
+        val choices = requireNotNull(WebAudioParser.playlistChoices(script, json))
+        assertEquals(listOf("10_404", "10_136"), choices.map { it.playlist.id })
+        assertEquals("слушать & петь", choices[0].playlist.title)
+        assertEquals(91, choices[1].playlist.trackCount)
+        assertEquals(listOf(true, false), choices.map { it.containsTrack })
+        assertTrue(choices.all { it.playlist.isEditable })
+        assertNull(WebAudioParser.playlistChoices("addLangKeys({})", json))
+    }
+
+    @Test
     fun `lyrics fall back to ugc when text is null`() {
         val lyrics = requireNotNull(WebAudioParser.lyrics(json.parseToJsonElement("""{"lyrics":{"text":null,"ugc":["one","two"]}}""")))
         assertFalse(lyrics.isSynced)

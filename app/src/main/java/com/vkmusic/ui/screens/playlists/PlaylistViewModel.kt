@@ -79,20 +79,6 @@ class PlaylistViewModel @Inject constructor(
         _events.send(PlaylistEvent.Closed)
     }
 
-    /** Убрать трек из своего плейлиста; в списке он пропадает сразу, при ошибке список перечитывается. */
-    fun removeTrack(track: Track) {
-        val playlist = libraryCopy.value ?: _details.value
-        updateTracks { tracks -> tracks.filterNot { it.id == track.id } }
-        viewModelScope.launch {
-            runCatching { playlistRepository.removeTracks(playlist, listOf(track)) }
-                .onSuccess { _events.send(PlaylistEvent.Message("Удалено из «${playlist.title}»")) }
-                .onFailure {
-                    refresh()
-                    _events.send(PlaylistEvent.Message(it.message ?: "Не удалось удалить из плейлиста"))
-                }
-        }
-    }
-
     fun edit(title: String, description: String) = launchReporting("Плейлист обновлён") {
         playlistRepository.edit(_details.value, title, description)
         _details.value = _details.value.copy(title = title, description = description)

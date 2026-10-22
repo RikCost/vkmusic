@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vkmusic.data.api.VkAudioRepository
 import com.vkmusic.data.model.Playlist
+import com.vkmusic.data.model.PlaylistChoice
 import com.vkmusic.data.model.Track
 import com.vkmusic.data.export.ExportStatus
 import com.vkmusic.data.export.Mp3ExportRepository
@@ -17,13 +18,23 @@ import com.vkmusic.player.queue.PlayerConnection
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+/** Окно «Добавить в плейлист»: [choices] = null, пока VK не ответил; [pending] — плейлисты, ждущие ответа VK. */
+data class PlaylistPickerState(
+    val track: Track,
+    val choices: List<PlaylistChoice>? = null,
+    val pending: Set<String> = emptySet(),
+    val error: String? = null,
+)
 
 @HiltViewModel
 class TrackActionsViewModel @Inject constructor(
@@ -60,14 +71,8 @@ class TrackActionsViewModel @Inject constructor(
 
     val myPlaylists: StateFlow<List<Playlist>> = playlistRepository.playlists
 
-    val editablePlaylists: StateFlow<List<Playlist>> = playlistRepository.playlists
-        .map { playlists -> playlists.filter { it.isEditable } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
     private val _messages = Channel<String>(Channel.BUFFERED)
     val messages: Flow<String> = _messages.receiveAsFlow()
-
-    fun loadPlaylists() = launchReporting(null) { playlistRepository.refresh() }
 
     fun play(tracks: List<Track>, index: Int) = playerConnection.playQueue(withDownloads(tracks), index)
 
@@ -88,8 +93,61 @@ class TrackActionsViewModel @Inject constructor(
 
     fun removeFromLibrary(track: Track) = launchReporting("Удалено из моей музыки") { trackRepository.removeFromLibrary(track) }
 
-    fun addToPlaylist(playlist: Playlist, tracks: List<Track>) =
-        launchReporting("Добавлено в «${playlist.title}»") { playlistRepository.addTracks(playlist, tracks) }
+    private val _playlistPicker = MutableStateFlow<PlaylistPickerState?>(null)
+    val playlistPicker: StateFlow<PlaylistPickerState?> = _playlistPicker.asStateFlow()
+
+    fun openPlaylistPicker(track: Track) {
+        _playlistPicker.value = PlaylistPickerState(track)
+        viewModelScope.launch {
+            val result = runCatching { playlistRepository.choicesFor(track) }
+            _playlistPicker.update { state ->
+                if (state?.track?.id != track.id) return@update state
+                result.fold(
+                    onSuccess = { state.copy(choices = it) },
+                    onFailure = { state.copy(choices = emptyList(), error = it.message ?: "Не удалось загрузить плейлисты") },
+                )
+            }
+        }
+    }
+
+    fun closePlaylistPicker() {
+        _playlistPicker.value = null
+    }
+
+    /** Галочка меняется сразу; если VK ответил ошибкой — возвращается обратно. */
+    fun togglePlaylist(choice: PlaylistChoice) {
+        val state = _playlistPicker.value ?: return
+        val playlist = choice.playlist
+        if (playlist.id in state.pending) return
+        val track = state.track
+        val add = !choice.containsTrack
+        setChoice(track, playlist.id, add, pending = true)
+        viewModelScope.launch {
+            runCatching {
+                if (add) playlistRepository.addTracks(playlist, listOf(track)) else playlistRepository.removeTracks(playlist, listOf(track))
+            }.onSuccess {
+                setChoice(track, playlist.id, add, pending = false)
+                _messages.trySend(if (add) "Добавлено в «${playlist.title}»" else "Удалено из «${playlist.title}»")
+            }.onFailure {
+                setChoice(track, playlist.id, !add, pending = false)
+                _messages.trySend(it.message ?: "Ошибка")
+            }
+        }
+    }
+
+    private fun setChoice(track: Track, playlistId: String, contains: Boolean, pending: Boolean) {
+        _playlistPicker.update { state ->
+            if (state?.track?.id != track.id) return@update state
+            state.copy(
+                choices = state.choices?.map { choice ->
+                    if (choice.playlist.id != playlistId || choice.containsTrack == contains) return@map choice
+                    val count = (choice.playlist.trackCount + if (contains) 1 else -1).coerceAtLeast(0)
+                    PlaylistChoice(choice.playlist.copy(trackCount = count), contains)
+                },
+                pending = if (pending) state.pending + playlistId else state.pending - playlistId,
+            )
+        }
+    }
 
     fun createPlaylist(title: String, tracks: List<Track>) =
         launchReporting("Плейлист «$title» создан") { playlistRepository.create(title, tracks) }

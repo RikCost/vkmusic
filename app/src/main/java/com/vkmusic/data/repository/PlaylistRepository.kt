@@ -2,6 +2,7 @@ package com.vkmusic.data.repository
 
 import com.vkmusic.data.api.VkAudioRepository
 import com.vkmusic.data.model.Playlist
+import com.vkmusic.data.model.PlaylistChoice
 import com.vkmusic.data.model.Track
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,6 +36,8 @@ class PlaylistRepository @Inject constructor(
 
     suspend fun details(ownerId: Long, playlistId: Long, accessKey: String?): Playlist =
         api.getPlaylist(ownerId, playlistId, accessKey)
+
+    suspend fun choicesFor(track: Track): List<PlaylistChoice> = api.getPlaylistsForTrack(track)
 
     suspend fun tracks(ownerId: Long, playlistId: Long, accessKey: String?): List<Track> =
         api.getPlaylistTracks(ownerId, playlistId, accessKey)

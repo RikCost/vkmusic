@@ -5,6 +5,7 @@ import com.vkmusic.data.model.Friend
 import com.vkmusic.data.model.Lyrics
 import com.vkmusic.data.model.MixCategory
 import com.vkmusic.data.model.Playlist
+import com.vkmusic.data.model.PlaylistChoice
 import com.vkmusic.data.model.Profile
 import com.vkmusic.data.model.Track
 
@@ -30,6 +31,9 @@ interface VkAudioRepository {
     suspend fun followPlaylist(playlist: Playlist)
     suspend fun addToPlaylist(playlist: Playlist, tracks: List<Track>)
     suspend fun removeFromPlaylist(playlist: Playlist, tracks: List<Track>)
+
+    /** Свои плейлисты с отметкой, есть ли в них [track]. */
+    suspend fun getPlaylistsForTrack(track: Track): List<PlaylistChoice>
 
     suspend fun search(query: String, offset: Int = 0, count: Int = 50): List<Track>
     suspend fun searchAlbums(query: String, count: Int = 20): List<Playlist>
