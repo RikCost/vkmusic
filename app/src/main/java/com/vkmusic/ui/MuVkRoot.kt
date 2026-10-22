@@ -1,5 +1,9 @@
 package com.vkmusic.ui
 
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Snackbar
 import android.app.Activity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -92,7 +96,18 @@ fun MuVkRoot(viewModel: RootViewModel = hiltViewModel()) {
             Scaffold(
                 modifier = Modifier.fillMaxSize(),
                 containerColor = MaterialTheme.colorScheme.background,
-                snackbarHost = { SnackbarHost(snackbarHostState) },
+                snackbarHost = {
+                    // Чуть выше низа экрана, чтобы не закрывать кнопки трека, и полупрозрачно — видно, что под ним.
+                    val lift = if (destination?.hasRoute<PlayerRoute>() == true) PLAYER_SNACKBAR_LIFT else SNACKBAR_LIFT
+                    SnackbarHost(snackbarHostState, modifier = Modifier.padding(bottom = lift)) { data ->
+                        Snackbar(
+                            snackbarData = data,
+                            shape = RoundedCornerShape(12.dp),
+                            containerColor = MaterialTheme.colorScheme.inverseSurface.copy(alpha = SNACKBAR_ALPHA),
+                            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                        )
+                    }
+                },
                 bottomBar = {
                     if (showChrome) {
                         Column {
@@ -208,3 +223,8 @@ private fun NavHostController.navigateTopLevel(item: TopLevelDestination) = navi
 private fun <T : Any> NavHostController.navigateClearingStack(route: T) = navigate(route) {
     popUpTo(graph.id) { inclusive = true }
 }
+
+// Над нижней панелью/мини-плеером в списках и над строкой кнопок трека на экране плеера.
+private val SNACKBAR_LIFT = 16.dp
+private val PLAYER_SNACKBAR_LIFT = 88.dp
+private const val SNACKBAR_ALPHA = 0.9f
