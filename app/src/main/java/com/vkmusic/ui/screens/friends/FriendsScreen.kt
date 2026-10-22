@@ -1,5 +1,6 @@
 package com.vkmusic.ui.screens.friends
 
+import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.Icons
 import androidx.compose.runtime.remember
@@ -73,7 +74,7 @@ private fun OwnersPage(title: String, emptyText: String, contentPadding: Padding
             LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding.bottomOnly()) {
                 if (state.data.size > FILTER_THRESHOLD) item { FilterField(filter, { filter = it }, placeholder = "Поиск") }
                 when {
-                    state.error != null -> item { MessageBox(state.error.orEmpty()) }
+                    state.error != null -> item { MessageBox(state.error.orEmpty(), icon = Icons.Rounded.CloudOff, onRetry = viewModel::refresh) }
                     state.isLoading && state.data.isEmpty() -> item { LoadingBox() }
                     state.data.isEmpty() -> item { MessageBox(emptyText) }
                     items.isEmpty() -> item { MessageBox("Ничего не найдено", icon = Icons.Rounded.SearchOff) }
@@ -124,7 +125,7 @@ fun OwnerScreen(contentPadding: PaddingValues, viewModel: OwnerTracksViewModel =
                 ) {
                     LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding.bottomOnly()) {
                         when {
-                            playlists.error != null -> item { MessageBox(playlists.error.orEmpty()) }
+                            playlists.error != null -> item { MessageBox(playlists.error.orEmpty(), icon = Icons.Rounded.CloudOff, onRetry = viewModel::refreshPlaylists) }
                             playlists.isLoading && playlists.data.isEmpty() -> item { LoadingBox() }
                             playlists.data.isEmpty() -> item { MessageBox("Плейлистов нет") }
                         }

@@ -148,7 +148,19 @@ class PlaybackService : MediaSessionService() {
      * «Перемотка в начало трека» Meridius: «назад» перезапускает текущий трек, если он играет
      * [REWIND_THRESHOLD_MS] и дольше; при выключенной опции всегда переходит к предыдущему.
      */
-    private inner class RewindingPlayer(player: Player) : ForwardingPlayer(player) {
+    private inner class RewindingPlayer(private val exo: ExoPlayer) : ForwardingPlayer(exo) {
+        // Плеер встал с ошибкой (например, без сети исчерпал попытки и пропуски): «Играть» начинает
+        // заново — сбрасывает счётчики и готовит плеер, иначе Media3 в состоянии ошибки ничего не делает.
+        override fun play() {
+            if (exo.playerError != null) {
+                exo.currentMediaItem?.mediaId?.let(resolveAttempts::remove)
+                consecutiveSkips = 0
+                exo.prepare()
+                resolveAhead(exo)
+            }
+            super.play()
+        }
+
         override fun seekToPrevious() {
             val restart = rewindToStart && currentPosition >= REWIND_THRESHOLD_MS
             if (restart || !hasPreviousMediaItem()) seekTo(0) else seekToPreviousMediaItem()

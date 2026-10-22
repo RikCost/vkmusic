@@ -141,7 +141,7 @@ private fun PlaylistsTab(contentPadding: PaddingValues, viewModel: PlaylistsView
     ) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding.bottomOnly()) {
             when {
-                state.error != null -> item { MessageBox(state.error.orEmpty(), icon = Icons.Rounded.CloudOff) }
+                state.error != null -> item { MessageBox(state.error.orEmpty(), icon = Icons.Rounded.CloudOff, onRetry = viewModel::refresh) }
                 state.isLoading && state.data.isEmpty() -> item { ListSkeleton(artworkSize = 56.dp) }
                 state.data.isEmpty() -> item { MessageBox("Плейлистов пока нет", icon = Icons.AutoMirrored.Rounded.QueueMusic) }
             }
@@ -171,7 +171,7 @@ private fun AlbumsTab(contentPadding: PaddingValues, viewModel: AlbumsViewModel)
         ) {
             val fullWidth: LazyGridItemSpanScope.() -> GridItemSpan = { GridItemSpan(maxLineSpan) }
             when {
-                state.error != null -> item(span = fullWidth) { MessageBox(state.error.orEmpty(), icon = Icons.Rounded.CloudOff) }
+                state.error != null -> item(span = fullWidth) { MessageBox(state.error.orEmpty(), icon = Icons.Rounded.CloudOff, onRetry = viewModel::refresh) }
                 state.isLoading && state.data.isEmpty() -> item(span = fullWidth) { LoadingBox() }
                 state.data.isEmpty() -> item(span = fullWidth) {
                     MessageBox("Альбомов пока нет. Добавить альбом к себе можно кнопкой «+» на его странице.", icon = Icons.Rounded.Album)

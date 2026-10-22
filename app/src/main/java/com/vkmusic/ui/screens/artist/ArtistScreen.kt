@@ -1,5 +1,7 @@
 package com.vkmusic.ui.screens.artist
 
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.Icons
 import com.vkmusic.data.toUserMessage
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -83,7 +85,7 @@ fun ArtistScreen(contentPadding: PaddingValues, viewModel: ArtistViewModel = hil
             } else {
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding.bottomOnly()) {
                     when {
-                        albums.error != null -> item { MessageBox(albums.error.orEmpty()) }
+                        albums.error != null -> item { MessageBox(albums.error.orEmpty(), icon = Icons.Rounded.CloudOff) }
                         albums.isLoading -> item { LoadingBox() }
                         albums.data.isEmpty() -> item { MessageBox("Альбомов нет") }
                     }

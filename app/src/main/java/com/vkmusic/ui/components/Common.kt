@@ -131,6 +131,25 @@ fun MessageBox(text: String, modifier: Modifier = Modifier, icon: ImageVector? =
 }
 
 @Composable
+private fun ErrorBanner(text: String, onRetry: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 4.dp),
+    ) {
+        Icon(Icons.Rounded.CloudOff, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+        )
+        TextButton(onClick = onRetry) { Text("Повторить") }
+    }
+}
+
+@Composable
 fun LoadingBox(modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
         CircularProgressIndicator()
@@ -281,8 +300,11 @@ fun TrackSourcePage(
             actions = actions,
             header = {
                 header()
+                // Список уже есть (из кэша), а обновить не вышло: компактная строка над кнопками,
+                // а не сообщение вместо «Играть / Перемешать».
+                if (state.error != null && state.data.isNotEmpty()) item { ErrorBanner(state.error, onRefresh) }
                 when {
-                    state.error != null -> item { MessageBox(state.error, icon = Icons.Rounded.CloudOff) }
+                    state.error != null && state.data.isEmpty() -> item { MessageBox(state.error, icon = Icons.Rounded.CloudOff, onRetry = onRefresh) }
                     state.isLoading && state.data.isEmpty() -> item { ListSkeleton() }
                     state.data.isEmpty() -> item { MessageBox(emptyText, icon = emptyIcon) }
                     tracks.isEmpty() -> item { MessageBox("Ничего не найдено", icon = Icons.Rounded.SearchOff) }

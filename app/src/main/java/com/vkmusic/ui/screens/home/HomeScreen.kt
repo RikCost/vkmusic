@@ -1,5 +1,6 @@
 package com.vkmusic.ui.screens.home
 
+import androidx.compose.material.icons.rounded.CloudOff
 import com.vkmusic.R
 import androidx.compose.ui.res.stringResource
 import com.vkmusic.ui.components.currentIsPlaying
@@ -126,7 +127,7 @@ fun HomeScreen(
                 }
             }
             when {
-                recommendations.error != null -> item { MessageBox(recommendations.error.orEmpty()) }
+                recommendations.error != null -> item { MessageBox(recommendations.error.orEmpty(), icon = Icons.Rounded.CloudOff, onRetry = viewModel::refresh) }
                 recommendations.isLoading && recommendations.data.isEmpty() -> item { LoadingBox() }
             }
             trackItems(recommendations.data, currentId, actions, keyPrefix = "rec_", isPlaying = isPlaying)
