@@ -1,5 +1,7 @@
 package com.vkmusic.data.repository
 
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.Mutex
 import com.vkmusic.data.api.VkAudioRepository
 import com.vkmusic.data.db.TrackDao
 import com.vkmusic.data.db.toEntity
@@ -26,7 +28,7 @@ class LibraryIndex(tracks: List<Track> = emptyList()) {
 class TrackRepository @Inject constructor(
     private val api: VkAudioRepository,
     private val dao: TrackDao,
-    @param:ApplicationScope scope: CoroutineScope,
+    @ApplicationScope scope: CoroutineScope,
 ) {
     // Читается из базы один раз с запуска приложения: тысячи строк «моей музыки» готовы к открытию
     // вкладки, а не грузятся заново на каждом экране.
@@ -36,7 +38,13 @@ class TrackRepository @Inject constructor(
 
     val libraryIndex: Flow<LibraryIndex> = library.map(::LibraryIndex).shareIn(scope, SharingStarted.Eagerly, replay = 1)
 
-    suspend fun refreshLibrary() {
+    // Обновление, добавление и удаление идут по одному: иначе перечитанный за секунды до этого снимок
+    // VK затирал только что добавленный или удалённый трек.
+    private val libraryMutex = Mutex()
+
+    suspend fun refreshLibrary() = libraryMutex.withLock { reloadLibrary() }
+
+    private suspend fun reloadLibrary() {
         val tracks = buildList {
             while (size < MAX_TRACKS) {
                 val page = api.getMyAudio(offset = size, count = PAGE_SIZE)
@@ -49,16 +57,13 @@ class TrackRepository @Inject constructor(
 
     // Один запрос к VK и правка одной строки в базе: полная перезагрузка «моей музыки» после каждого
     // нажатия занимала секунды. Целиком список перечитывается, только если VK не вернул добавленную копию.
-    suspend fun addToLibrary(track: Track) {
+    suspend fun addToLibrary(track: Track) = libraryMutex.withLock {
         val added = api.addAudio(track)
-        if (added.audioId == track.audioId && added.webHashes == null) {
-            refreshLibrary()
-        } else {
-            dao.insertFirst(added.toEntity(0))
-        }
+        // Тот же id — VK не вернул новую копию: настоящий id узнаём, перечитав библиотеку.
+        if (added.id == track.id) reloadLibrary() else dao.insertFirst(added.toEntity(0))
     }
 
-    suspend fun removeFromLibrary(track: Track) {
+    suspend fun removeFromLibrary(track: Track) = libraryMutex.withLock {
         val library = library.first()
         val own = library.firstOrNull { it.id == track.id } ?: library.firstOrNull { it.matchKey == track.matchKey } ?: track
         api.deleteAudio(own)

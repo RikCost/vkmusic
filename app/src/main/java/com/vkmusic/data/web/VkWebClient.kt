@@ -1,5 +1,9 @@
 package com.vkmusic.data.web
 
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.JsonPrimitive
+import com.vkmusic.data.VkWebActionException
+import com.vkmusic.data.HttpStatusException
 import com.vkmusic.data.api.vk.VkHeadersInterceptor
 import com.vkmusic.data.api.vk.await
 import kotlinx.coroutines.Dispatchers
@@ -16,8 +20,23 @@ import okhttp3.RequestBody
 import okhttp3.Response
 import java.io.IOException
 
+/** Ненулевой код в `payload[0]` ответа al_audio.php — VK отказал в действии; текст причины — в `payload[1][0]`. */
+internal fun actionError(payload: JsonArray): VkWebActionException? {
+    val code = (payload.getOrNull(0) as? JsonPrimitive)?.contentOrNull ?: return null
+    if (code == "0") return null
+    val reason = ((payload.getOrNull(1) as? JsonArray)?.getOrNull(0) as? JsonPrimitive)?.contentOrNull
+        ?.let(WebAudioParser::unescape)
+        ?.takeIf { it.isNotBlank() && it.length <= MAX_ACTION_REASON_LENGTH }
+    return VkWebActionException(code, reason ?: "VK не выполнил действие — попробуйте позже")
+}
+
+private const val MAX_ACTION_REASON_LENGTH = 200
+
 /** Веб-сессия отсутствует или протухла: нужен повторный вход. */
-class VkWebAuthException(message: String) : Exception(message)
+open class VkWebAuthException(message: String) : Exception(message)
+
+/** VK прямо сказал, что веб-сессии больше нет (страница входа, отказ web_token): нужен повторный вход. */
+class VkSessionExpiredException : VkWebAuthException("Сессия VK истекла — войдите заново")
 
 /**
  * HTTP-клиент веб-версии VK (meridius-core `HTTPClient`): заголовки Firefox, cookie веб-сессии.
@@ -73,7 +92,7 @@ class VkWebClient(
         throw IOException("Слишком много редиректов VK")
     }
 
-    private fun WebResponse.bodyOrThrow(): String = if (code in 200..299) body else throw IOException("HTTP $code")
+    private fun WebResponse.bodyOrThrow(): String = if (code in 200..299) body else throw HttpStatusException(code)
 
     private fun formBody(params: Map<String, Any?>) = FormBody.Builder().apply {
         params.forEach { (key, value) -> if (value != null) add(key, value.toString()) }
@@ -82,14 +101,31 @@ class VkWebClient(
     suspend fun postJson(url: String, params: Map<String, Any?>, headers: Map<String, String> = emptyMap()): JsonObject =
         parseJson(postForm(url, params, headers)) as? JsonObject ?: throw VkWebAuthException("Неожиданный ответ VK")
 
-    /** Запрос к al_audio.php (meridius-core `requestEndpoint`): ответ `{"payload":[code, [...]]}`. */
-    suspend fun alAudio(params: Map<String, Any?>): JsonArray {
+    /** Вызывается, когда вместо ответа пришла страница входа: веб-сессия VK закончилась. */
+    @Volatile
+    var onSessionLost: (() -> Unit)? = null
+
+    /**
+     * Запрос к al_audio.php (meridius-core `requestEndpoint`): ответ `{"payload":[code, [...]]}`.
+     * [requireOk] — для действий (добавить, удалить, сохранить): ненулевой code значит, что VK отказал,
+     * и это ошибка, а не «успех», как раньше (MeridiusNova проверяет так же: `payload[0] !== 0`).
+     */
+    suspend fun alAudio(params: Map<String, Any?>, requireOk: Boolean = false): JsonArray {
         val text = postForm(VkWebConfig.AL_AUDIO_URL, params + ("al" to 1))
-        val root = parseJson(text) as? JsonObject
-            ?: throw VkWebAuthException("Сессия VK истекла — войдите заново")
-        val payload = root["payload"] as? JsonArray ?: throw VkWebAuthException("Сессия VK истекла — войдите заново")
+        val root = parseJson(text) as? JsonObject ?: throw notJson(text)
+        val payload = root["payload"] as? JsonArray ?: throw notJson(text)
+        if (requireOk) actionError(payload)?.let { throw it }
         return payload.getOrNull(1) as? JsonArray ?: JsonArray(emptyList())
     }
+
+    // Страница входа — сессия кончилась; любая другая не-JSON страница (капча, лимит, работы на VK) — нет.
+    private fun notJson(text: String): Exception =
+        if (text.contains(LOGIN_PAGE_MARKER) || text.contains(LOGIN_FORM_MARKER)) {
+            onSessionLost?.invoke()
+            VkSessionExpiredException()
+        } else {
+            IOException("VK временно недоступен — попробуйте позже")
+        }
 
     /** HTML-страница al_audio.php без al=1 — оттуда Meridius берёт хеши (newPlaylistHash и т. п.). */
     suspend fun alAudioPage(): String = postForm(VkWebConfig.AL_AUDIO_URL, emptyMap())
@@ -130,6 +166,8 @@ class VkWebClient(
 
     private companion object {
         const val MAX_REDIRECTS = 10
+        const val LOGIN_PAGE_MARKER = "Index.initRedesignedVkId"
+        const val LOGIN_FORM_MARKER = "id.vk.ru/auth"
         val REDIRECT_CODES = setOf(301, 302, 303, 307, 308)
     }
 }

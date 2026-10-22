@@ -1,5 +1,7 @@
 package com.vkmusic.ui.components
 
+import kotlinx.coroutines.CancellationException
+import com.vkmusic.data.toUserMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vkmusic.data.model.Track
@@ -31,7 +33,11 @@ abstract class TrackSourceViewModel : ViewModel() {
             _state.update { it.copy(isLoading = true, error = null) }
             runCatching { load() }
                 .onSuccess { tracks -> _state.value = LoadState(tracks) }
-                .onFailure { e -> _state.update { it.copy(isLoading = false, error = e.message ?: "Ошибка загрузки") } }
+                .onFailure { e ->
+                    // Отменённая предыдущая загрузка — не ошибка: её заменила новая.
+                    if (e is CancellationException) throw e
+                    _state.update { it.copy(isLoading = false, error = e.toUserMessage("Не удалось загрузить")) }
+                }
         }
     }
 }

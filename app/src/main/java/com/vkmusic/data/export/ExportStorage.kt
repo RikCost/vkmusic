@@ -47,7 +47,14 @@ class ExportStorage @Inject constructor(
         return id.substringAfter(':').ifEmpty { id }
     }
 
-    private fun saveToTree(tree: Uri, folder: String?, fileName: String, mimeType: String, data: ByteArray): String {
+    // Доступ к папке могли отозвать в любой момент — на любом шаге это одна понятная ошибка.
+    private fun saveToTree(tree: Uri, folder: String?, fileName: String, mimeType: String, data: ByteArray): String = try {
+        writeToTree(tree, folder, fileName, mimeType, data)
+    } catch (e: SecurityException) {
+        throw IOException("Нет доступа к папке сохранения — выберите её заново в настройках", e)
+    }
+
+    private fun writeToTree(tree: Uri, folder: String?, fileName: String, mimeType: String, data: ByteArray): String {
         val resolver = context.contentResolver
         val rootId = DocumentsContract.getTreeDocumentId(tree)
         var parent = DocumentsContract.buildDocumentUriUsingTree(tree, rootId)
@@ -57,12 +64,15 @@ class ExportStorage @Inject constructor(
                 ?: throw IOException("Не удалось создать папку «$folder»")
         }
         // Провайдер сам добавит « (1)», если файл с таким именем уже есть.
-        val file = try {
-            DocumentsContract.createDocument(resolver, parent, mimeType, fileName)
-        } catch (e: SecurityException) {
-            throw IOException("Нет доступа к папке сохранения — выберите её заново в настройках", e)
-        } ?: throw IOException("Не удалось создать файл «$fileName»")
-        resolver.openOutputStream(file)?.use { it.write(data) } ?: throw IOException("Не удалось записать «$fileName»")
+        val file = DocumentsContract.createDocument(resolver, parent, mimeType, fileName)
+            ?: throw IOException("Не удалось создать файл «$fileName»")
+        // Недописанный файл не оставляем в папке пользователя.
+        try {
+            resolver.openOutputStream(file)?.use { it.write(data) } ?: throw IOException("Не удалось записать «$fileName»")
+        } catch (e: Exception) {
+            runCatching { DocumentsContract.deleteDocument(resolver, file) }
+            throw e
+        }
         return listOfNotNull(displayName(tree.toString()), folder, fileName).joinToString("/")
     }
 

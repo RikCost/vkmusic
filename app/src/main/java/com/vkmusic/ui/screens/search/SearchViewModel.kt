@@ -1,5 +1,6 @@
 package com.vkmusic.ui.screens.search
 
+import com.vkmusic.data.toUserMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vkmusic.data.api.VkAudioRepository
@@ -63,7 +64,7 @@ class SearchViewModel @Inject constructor(
                 SearchUiState(tracks = tracks.await(), albums = albums.await(), isQueryEmpty = false)
             }
         }
-    }.getOrElse { SearchUiState(error = it.message ?: "Ошибка поиска", isQueryEmpty = query.isEmpty()) }
+    }.getOrElse { SearchUiState(error = it.toUserMessage("Ошибка поиска"), isQueryEmpty = query.isEmpty()) }
 
     private companion object {
         const val DEBOUNCE_MS = 400L

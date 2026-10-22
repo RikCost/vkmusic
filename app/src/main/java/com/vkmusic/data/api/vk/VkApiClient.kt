@@ -21,6 +21,7 @@ class VkApiClient(
     private val json: Json,
     private val tokenProvider: suspend () -> String?,
     private val apiUrl: HttpUrl = VkConfig.API_URL.toHttpUrl(),
+    private val onAuthError: suspend () -> Unit = {},
 ) {
     suspend fun <T> call(
         method: String,
@@ -41,7 +42,12 @@ class VkApiClient(
             .post(body)
             .build()
         val text = okHttpClient.newCall(request).awaitBody()
-        return withContext(Dispatchers.Default) { parse(text, deserializer) }
+        return try {
+            withContext(Dispatchers.Default) { parse(text, deserializer) }
+        } catch (e: VkApiException) {
+            if (e.isAuthError) onAuthError()
+            throw e
+        }
     }
 
     internal fun <T> parse(text: String, deserializer: DeserializationStrategy<T>): T {

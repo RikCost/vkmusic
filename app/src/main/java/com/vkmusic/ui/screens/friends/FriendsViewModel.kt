@@ -1,5 +1,6 @@
 package com.vkmusic.ui.screens.friends
 
+import com.vkmusic.data.toUserMessage
 import com.vkmusic.ui.formatTracks
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -33,7 +34,7 @@ abstract class OwnersViewModel : ViewModel() {
             _state.update { it.copy(isLoading = true, error = null) }
             runCatching { load() }
                 .onSuccess { _state.value = LoadState(it) }
-                .onFailure { e -> _state.update { it.copy(isLoading = false, error = e.message ?: "Ошибка загрузки") } }
+                .onFailure { e -> _state.update { it.copy(isLoading = false, error = e.toUserMessage("Ошибка загрузки")) } }
         }
     }
 }
@@ -74,13 +75,23 @@ class OwnerTracksViewModel @Inject constructor(
         refreshPlaylists()
     }
 
-    override suspend fun load(): List<Track> = api.getUserAudio(route.ownerId)
+    // Вся музыка владельца, а не первые 100 треков: страницами, как «моя музыка».
+    override suspend fun load(): List<Track> = buildList {
+        while (size < MAX_TRACKS) {
+            val page = api.getUserAudio(route.ownerId, offset = size, count = PAGE_SIZE)
+            addAll(page)
+            if (page.size < PAGE_SIZE) break
+        }
+    }.distinctBy { it.id }
 
     fun refreshPlaylists() {
         viewModelScope.launch {
             _playlists.update { it.copy(isLoading = true, error = null) }
             _playlists.value = runCatching { api.getUserPlaylists(route.ownerId) }
-                .fold({ LoadState(it) }, { LoadState(emptyList(), error = it.message ?: "Плейлисты недоступны") })
+                .fold({ LoadState(it) }, { LoadState(emptyList(), error = it.toUserMessage("Плейлисты недоступны")) })
         }
     }
 }
+
+private const val PAGE_SIZE = 500
+private const val MAX_TRACKS = 20_000

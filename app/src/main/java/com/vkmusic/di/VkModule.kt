@@ -46,7 +46,7 @@ abstract class VkModule {
         @Provides
         @Singleton
         fun provideVkApiClient(okHttpClient: OkHttpClient, json: Json, webSession: WebSessionManager) =
-            VkApiClient(okHttpClient, json, tokenProvider = { webSession.accessToken() })
+            VkApiClient(okHttpClient, json, tokenProvider = { webSession.accessToken() }, onAuthError = webSession::onApiAuthError)
 
         @Provides
         @Singleton

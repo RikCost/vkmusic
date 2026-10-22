@@ -1,5 +1,6 @@
 package com.vkmusic.ui.screens.playlists
 
+import com.vkmusic.data.toUserMessage
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.toRoute
@@ -88,7 +89,7 @@ class PlaylistViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { block() }
                 .onSuccess { success?.let { _events.send(PlaylistEvent.Message(it)) } }
-                .onFailure { _events.send(PlaylistEvent.Message(it.message ?: "Ошибка")) }
+                .onFailure { _events.send(PlaylistEvent.Message(it.toUserMessage("Ошибка"))) }
         }
     }
 }

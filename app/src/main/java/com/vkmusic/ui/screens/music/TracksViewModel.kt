@@ -1,5 +1,6 @@
 package com.vkmusic.ui.screens.music
 
+import com.vkmusic.data.toUserMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vkmusic.data.model.Track
@@ -37,7 +38,7 @@ class TracksViewModel @Inject constructor(
         if (refreshing.value) return
         viewModelScope.launch {
             refreshing.value = true
-            error.value = refreshWithRetry()?.message
+            error.value = refreshWithRetry()?.toUserMessage()
             refreshing.value = false
         }
     }

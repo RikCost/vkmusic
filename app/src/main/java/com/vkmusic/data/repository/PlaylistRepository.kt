@@ -1,5 +1,6 @@
 package com.vkmusic.data.repository
 
+import kotlinx.coroutines.CancellationException
 import com.vkmusic.data.api.VkAudioRepository
 import com.vkmusic.data.model.Playlist
 import com.vkmusic.data.model.PlaylistChoice
@@ -46,8 +47,9 @@ class PlaylistRepository @Inject constructor(
     // ради одного счётчика стоила секунды ожидания после каждого нажатия.
     suspend fun create(title: String, tracks: List<Track> = emptyList()): Playlist {
         val playlist = api.createPlaylist(title)
-        if (tracks.isNotEmpty()) api.addToPlaylist(playlist, tracks)
-        _playlists.update { listOf(playlist.copy(trackCount = tracks.size, isEditable = true)) + it.filterNot { p -> p.id == playlist.id } }
+        // Плейлист уже есть в VK — в списке он появляется сразу, даже если добавление треков не удастся.
+        _playlists.update { listOf(playlist.copy(trackCount = 0, isEditable = true)) + it.filterNot { p -> p.id == playlist.id } }
+        if (tracks.isNotEmpty()) addTracks(playlist, tracks)
         return playlist
     }
 
@@ -69,20 +71,29 @@ class PlaylistRepository @Inject constructor(
 
     suspend fun edit(playlist: Playlist, title: String, description: String) {
         api.editPlaylist(playlist, title, description)
-        refresh()
+        _playlists.update { list -> list.map { if (it.id == playlist.id) it.copy(title = title, description = description) else it } }
+        refreshQuietly()
     }
 
     suspend fun follow(playlist: Playlist) {
         api.followPlaylist(playlist)
-        refresh()
+        refreshQuietly()
         if (playlist.isAlbum) runCatching { refreshAlbums() }
+    }
+
+    // Действие в VK уже выполнено: сбой последующей перезагрузки списка — не ошибка для пользователя.
+    private suspend fun refreshQuietly() {
+        runCatching { refresh() }.exceptionOrNull()?.let { if (it is CancellationException) throw it }
     }
 
     /** Удаляет свой плейлист или отписывается от чужого — у VK это одно действие над копией в «моих». */
     suspend fun remove(playlist: Playlist) {
         val own = (_playlists.value + _albums.value).firstOrNull { it.id == playlist.id } ?: playlist
+        val wasAlbum = playlist.isAlbum || _albums.value.any { it.id == playlist.id }
         api.deletePlaylist(own)
-        refresh()
-        if (playlist.isAlbum || _albums.value.any { it.id == playlist.id }) runCatching { refreshAlbums() }
+        _playlists.update { list -> list.filterNot { it.id == playlist.id } }
+        _albums.update { list -> list.filterNot { it.id == playlist.id } }
+        refreshQuietly()
+        if (wasAlbum) runCatching { refreshAlbums() }
     }
 }

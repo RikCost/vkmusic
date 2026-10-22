@@ -108,7 +108,7 @@ class VkQrAuth(
             mapOf("version" to VkWebConfig.WEB_TOKEN_VERSION, "app_id" to VkWebConfig.WEB_TOKEN_APP_ID),
             ORIGIN_HEADERS,
         )
-        if (response["type"].text() != "okay") throw VkWebAuthException("Сессия VK истекла — войдите заново")
+        if (response["type"].text() != "okay") throw VkSessionExpiredException()
         val data = response["data"] as? JsonObject ?: throw VkWebAuthException("Сессия VK истекла — войдите заново")
         val token = data["access_token"].text() ?: throw VkWebAuthException("Сессия VK истекла — войдите заново")
         val userId = (data["user_id"] as? JsonPrimitive)?.longOrNull

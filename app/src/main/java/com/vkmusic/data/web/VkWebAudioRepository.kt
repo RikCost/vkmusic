@@ -46,6 +46,9 @@ class VkWebAudioRepository(
 
     override suspend fun getProfile(): Profile = official.getProfile()
 
+    /** Забыть загруженные списки: после выхода они принадлежат чужому аккаунту. */
+    suspend fun clearCache() = cursorMutex.withLock { cursors.clear() }
+
     override suspend fun getMyAudio(offset: Int, count: Int) = getUserAudio(userIdProvider(), offset, count)
 
     // Веб отдаёт аудио постранично через next_from; смещения интерфейса накладываются на загруженный префикс.
@@ -156,8 +159,11 @@ class VkWebAudioRepository(
                 "group_id" to 0,
                 "hash" to addHash,
             ),
+            requireOk = true,
         )
-        return WebAudioParser.track(result.getOrNull(0), me) ?: track.copy(ownerId = me)
+        // VK добавил, но копию не вернул: отдаём исходный трек — TrackRepository перечитает библиотеку
+        // вместо того, чтобы записать выдуманный id.
+        return WebAudioParser.track(result.getOrNull(0), me) ?: track
     }
 
     override suspend fun deleteAudio(track: Track) {
@@ -165,6 +171,7 @@ class VkWebAudioRepository(
         if (deleteHash.isEmpty()) return official.deleteAudio(track)
         web.alAudio(
             mapOf("act" to "delete_audio", "aid" to track.audioId, "oid" to track.ownerId, "hash" to deleteHash, "restore" to 1),
+            requireOk = true,
         )
     }
 
@@ -263,6 +270,7 @@ class VkWebAudioRepository(
                 "title" to title,
                 "isPlaylist" to true,
             ),
+            requireOk = true,
         )
         return WebAudioParser.playlist(result.getOrNull(0), me) ?: throw IllegalStateException("Не удалось создать плейлист")
     }
@@ -282,6 +290,7 @@ class VkWebAudioRepository(
                 "playlist_id" to info.playlistId,
                 "title" to title,
             ),
+            requireOk = true,
         )
     }
 
@@ -298,6 +307,7 @@ class VkWebAudioRepository(
                     "playlist_id" to info.playlistId,
                     "playlist_owner_id" to info.ownerId,
                 ),
+                requireOk = true,
             )
         } else {
             toggleFollow(info)
@@ -313,6 +323,7 @@ class VkWebAudioRepository(
         val hash = playlist.followHash ?: throw IllegalStateException("Подписка на этот плейлист недоступна")
         web.alAudio(
             mapOf("act" to "follow_playlist", "hash" to hash, "playlist_id" to playlist.playlistId, "playlist_owner_id" to playlist.ownerId),
+            requireOk = true,
         )
     }
 
@@ -356,6 +367,7 @@ class VkWebAudioRepository(
                                 "owner_id" to me,
                                 "remove_pl_ids" to remove,
                             ),
+                            requireOk = true,
                         )
                     }
                 }

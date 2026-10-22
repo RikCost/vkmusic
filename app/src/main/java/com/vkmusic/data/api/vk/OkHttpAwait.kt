@@ -1,5 +1,6 @@
 package com.vkmusic.data.api.vk
 
+import com.vkmusic.data.HttpStatusException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -23,7 +24,7 @@ internal suspend fun Call.await(): Response = suspendCancellableCoroutine { cont
 
 internal suspend fun Call.awaitBody(requireSuccess: Boolean = true): String = withContext(Dispatchers.IO) {
     await().use { response ->
-        if (requireSuccess && !response.isSuccessful) throw IOException("HTTP ${response.code}")
+        if (requireSuccess && !response.isSuccessful) throw HttpStatusException(response.code)
         response.body.string()
     }
 }

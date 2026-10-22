@@ -2,6 +2,7 @@
 
 package com.vkmusic.ui.components
 
+import com.vkmusic.data.toUserMessage
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -59,7 +60,7 @@ class LyricsViewModel @Inject constructor(
             _state.value = runCatching { api.getLyrics(track) }
                 .fold(
                     onSuccess = { LoadState(it, error = if (it == null) "Текст песни не найден" else null) },
-                    onFailure = { LoadState(null, error = it.message ?: "Не удалось загрузить текст") },
+                    onFailure = { LoadState(null, error = it.toUserMessage("Не удалось загрузить текст")) },
                 )
         }
     }

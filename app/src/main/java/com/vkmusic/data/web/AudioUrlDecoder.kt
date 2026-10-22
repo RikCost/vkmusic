@@ -54,9 +54,7 @@ object AudioUrlDecoder {
                 if (index == -1) {
                     append(c)
                 } else {
-                    var offset = index - shift
-                    if (offset < 0) offset += doubled.length
-                    append(doubled[offset])
+                    append(doubled[Math.floorMod(index - shift, doubled.length)])
                 }
             }
         }
@@ -82,7 +80,7 @@ object AudioUrlDecoder {
     }
 
     private fun xor(s: String, key: String): String {
-        val k = key[0].code
+        val k = key.firstOrNull()?.code ?: return s
         return buildString { for (c in s) append((c.code xor k).toChar()) }
     }
 }

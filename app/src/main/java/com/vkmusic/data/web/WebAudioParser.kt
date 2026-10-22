@@ -173,7 +173,8 @@ object WebAudioParser {
     private fun decodeEntities(value: String): String = value
         .replace(numericEntityRegex) { match ->
             val code = match.groupValues[2].toIntOrNull(if (match.groupValues[1].isEmpty()) 10 else 16)
-            code?.let { String(Character.toChars(it)) } ?: match.value
+            // Битая сущность вроде &#99999999; не должна ронять разбор всего списка.
+            code?.takeIf(Character::isValidCodePoint)?.let { String(Character.toChars(it)) } ?: match.value
         }
         .replace("&quot;", "\"")
         .replace("&#39;", "'")

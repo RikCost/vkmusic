@@ -85,6 +85,7 @@ class TsAudioExtractor {
 
     private fun parsePat(data: ByteArray, payload: Int, end: Int) {
         val section = payload + 1 + (data[payload].toInt() and 0xFF)
+        if (section + 3 > end) return
         // section header 8 байт, затем пары program_number(2) + PID(2), CRC в конце.
         var entry = section + 8
         val sectionLength = ((data[section + 1].toInt() and 0x0F) shl 8) or (data[section + 2].toInt() and 0xFF)

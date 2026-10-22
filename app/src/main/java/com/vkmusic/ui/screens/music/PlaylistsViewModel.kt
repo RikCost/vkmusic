@@ -1,5 +1,6 @@
 package com.vkmusic.ui.screens.music
 
+import com.vkmusic.data.toUserMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vkmusic.data.model.Playlist
@@ -40,7 +41,7 @@ class PlaylistsViewModel @Inject constructor(
     private fun launchLoading(block: suspend () -> Unit) {
         viewModelScope.launch {
             loading.value = true
-            error.value = runCatching { block() }.exceptionOrNull()?.message
+            error.value = runCatching { block() }.exceptionOrNull()?.toUserMessage()
             loading.value = false
         }
     }
@@ -67,7 +68,7 @@ class AlbumsViewModel @Inject constructor(
     fun refresh() {
         viewModelScope.launch {
             loading.value = true
-            error.value = runCatching { playlistRepository.refreshAlbums() }.exceptionOrNull()?.message
+            error.value = runCatching { playlistRepository.refreshAlbums() }.exceptionOrNull()?.toUserMessage()
             loading.value = false
         }
     }

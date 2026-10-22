@@ -1,5 +1,10 @@
 package com.vkmusic.data.auth
 
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.CancellationException
+import com.vkmusic.data.web.VkSessionExpiredException
 import com.vkmusic.data.web.VkQrAuth
 import com.vkmusic.data.web.VkWebClient
 import com.vkmusic.data.web.VkWebConfig
@@ -21,6 +26,19 @@ class WebSessionManager @Inject constructor(
 ) {
     private val refreshMutex = Mutex()
 
+    private val _sessionExpired = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /** VK явно сообщил, что сессии больше нет: интерфейс выходит на экран входа. */
+    val sessionExpired: SharedFlow<Unit> = _sessionExpired.asSharedFlow()
+
+    // После сетевого сбоя web_token не запрашивается на каждом запросе — только раз в [REFRESH_BACKOFF_MS].
+    @Volatile
+    private var refreshBlockedUntil = 0L
+
+    init {
+        web.onSessionLost = { _sessionExpired.tryEmit(Unit) }
+    }
+
     /** Токен для официального API; обновляется, если устарел. null — сессии нет. */
     suspend fun accessToken(): String? {
         val session = sessionStore.current() ?: return null
@@ -28,9 +46,27 @@ class WebSessionManager @Inject constructor(
         return refreshMutex.withLock {
             val latest = sessionStore.current() ?: return@withLock null
             if (System.currentTimeMillis() - latest.obtainedAtMs < VkWebConfig.WEB_TOKEN_REFRESH_MS) return@withLock latest.accessToken
+            if (System.currentTimeMillis() < refreshBlockedUntil) return@withLock latest.accessToken
             // Сеть недоступна — работаем со старым токеном; VK сам ответит ошибкой, если он истёк.
-            runCatching { obtain() }.getOrNull()?.accessToken ?: latest.accessToken
+            tryObtain()?.accessToken ?: latest.accessToken
         }
+    }
+
+    /** Официальный API отверг токен (ошибка 5): пробуем получить новый, и только отказ VK — конец сессии. */
+    suspend fun onApiAuthError() {
+        refreshMutex.withLock { tryObtain() }
+    }
+
+    private suspend fun tryObtain(): VkSession? = try {
+        obtain()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: VkSessionExpiredException) {
+        _sessionExpired.tryEmit(Unit)
+        null
+    } catch (e: Exception) {
+        refreshBlockedUntil = System.currentTimeMillis() + REFRESH_BACKOFF_MS
+        null
     }
 
     suspend fun userId(): Long? = sessionStore.current()?.userId
@@ -55,12 +91,15 @@ class WebSessionManager @Inject constructor(
     }
 
     private suspend fun obtain(): VkSession {
+        val generation = sessionStore.generation
         val token: WebToken = qrAuth.webToken()
-        return VkSession(token.accessToken, token.userId, System.currentTimeMillis(), web = true).also { sessionStore.save(it) }
+        // Если пока шёл запрос пользователь вышел, сохранение отбрасывается — выход не отменяется.
+        return VkSession(token.accessToken, token.userId, System.currentTimeMillis(), web = true).also { sessionStore.save(it, generation) }
     }
 
     private companion object {
         // regex ACTION_LOGIN из meridius-core: признак страницы входа VK ID.
         const val LOGIN_PAGE_MARKER = "Index.initRedesignedVkId"
+        const val REFRESH_BACKOFF_MS = 30_000L
     }
 }

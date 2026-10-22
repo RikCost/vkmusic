@@ -89,7 +89,14 @@ class DownloadRepository @Inject constructor(
                 .setMimeType(if (track.isHls) MimeTypes.APPLICATION_M3U8 else null)
                 .setData(json.encodeToString(Track.serializer(), track).encodeToByteArray())
                 .build()
-            DownloadService.sendAddDownload(context, MusicDownloadService::class.java, request, false)
+            // Ссылки получаются за секунды — за это время приложение могло уйти в фон, где Android
+            // запрещает запускать сервис (IllegalStateException ронял приложение). Тогда загрузка
+            // ставится прямо в DownloadManager: он живёт в процессе и докачает, пока процесс жив.
+            try {
+                DownloadService.sendAddDownload(context, MusicDownloadService::class.java, request, false)
+            } catch (e: IllegalStateException) {
+                downloadManager.addDownload(request)
+            }
         }
     }
 

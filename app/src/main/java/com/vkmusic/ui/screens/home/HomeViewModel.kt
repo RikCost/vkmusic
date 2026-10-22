@@ -1,5 +1,6 @@
 package com.vkmusic.ui.screens.home
 
+import com.vkmusic.data.toUserMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vkmusic.data.api.VkAudioRepository
@@ -66,7 +67,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             _recommendations.update { it.copy(isLoading = true, error = null) }
             _recommendations.value = runCatching { api.getRecommendations() }
-                .fold({ LoadState(it) }, { LoadState(emptyList(), error = it.message ?: "Ошибка загрузки") })
+                .fold({ LoadState(it) }, { LoadState(emptyList(), error = it.toUserMessage("Ошибка загрузки")) })
         }
     }
 
@@ -77,7 +78,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             val result = runCatching { api.getMixSettings() }
                 .fold({ LoadState(it, error = if (it.isEmpty()) "Настройки микса недоступны" else null) }, {
-                    LoadState(emptyList(), error = it.message ?: "Настройки микса недоступны")
+                    LoadState(emptyList(), error = it.toUserMessage("Настройки микса недоступны"))
                 })
             _mix.update { it.copy(categories = result) }
         }
@@ -104,7 +105,7 @@ class HomeViewModel @Inject constructor(
             val options = settingsRepository.settings.first().mixOptions
             runCatching { playerConnection.playEndless { api.getMix(MIX_COMMON, null, options, MIX_PAGE) } }
                 .onSuccess { started -> if (!started) _messages.trySend("Не удалось загрузить треки микса") }
-                .onFailure { _messages.trySend(it.message ?: "Не удалось загрузить треки микса") }
+                .onFailure { _messages.trySend(it.toUserMessage("Не удалось загрузить треки микса")) }
             _mix.update { it.copy(isStarting = false) }
         }
     }

@@ -91,6 +91,19 @@ fun MuVkRoot(viewModel: RootViewModel = hiltViewModel()) {
         val navigator = remember(navController) { NavControllerNavigator(navController) }
         val backStackEntry by navController.currentBackStackEntryAsState()
         val destination = backStackEntry?.destination
+        val signOutToLogin = {
+            viewModel.signOut()
+            navController.navigateClearingStack(LoginRoute)
+            TopLevelDestination.entries.forEach { navController.clearBackStack(it.route) }
+        }
+        // VK сообщил, что сессии больше нет: выходим на вход с пояснением, а не сыпем ошибками на каждом экране.
+        LaunchedEffect(viewModel) {
+            viewModel.sessionExpired.collect {
+                if (viewModel.state.value?.authMode != AuthMode.Vk) return@collect
+                signOutToLogin()
+                snackbarHostState.showSnackbar("Сессия VK истекла — войдите заново")
+            }
+        }
         val showChrome = destination != null &&
             !destination.hasRoute<LoginRoute>() &&
             !destination.hasRoute<PlayerRoute>()
@@ -138,11 +151,7 @@ fun MuVkRoot(viewModel: RootViewModel = hiltViewModel()) {
                     composable<SettingsRoute> {
                         SettingsScreen(
                             contentPadding = padding,
-                            onSignOut = {
-                                viewModel.signOut()
-                                navController.navigateClearingStack(LoginRoute)
-                                TopLevelDestination.entries.forEach { navController.clearBackStack(it.route) }
-                            },
+                            onSignOut = signOutToLogin,
                         )
                     }
                     composable<PlayerRoute> { PlayerScreen(player = player, onBack = navController::popBackStack) }

@@ -1,5 +1,6 @@
 package com.vkmusic.ui.components
 
+import com.vkmusic.data.toUserMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vkmusic.data.api.VkAudioRepository
@@ -104,7 +105,7 @@ class TrackActionsViewModel @Inject constructor(
                 if (state?.track?.id != track.id) return@update state
                 result.fold(
                     onSuccess = { state.copy(choices = it) },
-                    onFailure = { state.copy(choices = emptyList(), error = it.message ?: "Не удалось загрузить плейлисты") },
+                    onFailure = { state.copy(choices = emptyList(), error = it.toUserMessage("Не удалось загрузить плейлисты")) },
                 )
             }
         }
@@ -130,7 +131,7 @@ class TrackActionsViewModel @Inject constructor(
                 _messages.trySend(if (add) "Добавлено в «${playlist.title}»" else "Удалено из «${playlist.title}»")
             }.onFailure {
                 setChoice(track, playlist.id, !add, pending = false)
-                _messages.trySend(it.message ?: "Ошибка")
+                _messages.trySend(it.toUserMessage("Ошибка"))
             }
         }
     }
@@ -190,7 +191,7 @@ class TrackActionsViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { block() }
                 .onSuccess { success?.let(_messages::trySend) }
-                .onFailure { _messages.trySend(it.message ?: "Ошибка") }
+                .onFailure { _messages.trySend(it.toUserMessage("Ошибка")) }
         }
     }
 

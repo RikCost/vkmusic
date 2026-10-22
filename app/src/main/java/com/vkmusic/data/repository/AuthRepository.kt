@@ -1,5 +1,6 @@
 package com.vkmusic.data.repository
 
+import com.vkmusic.data.web.VkWebAudioRepository
 import android.webkit.CookieManager
 import com.vkmusic.data.auth.SessionStore
 import com.vkmusic.data.auth.WebSessionManager
@@ -28,7 +29,10 @@ class AuthRepository @Inject constructor(
     private val sessionStore: SessionStore,
     private val trackDao: TrackDao,
     private val playlistRepository: PlaylistRepository,
+    private val webAudio: VkWebAudioRepository,
 ) {
+    val sessionExpired = webSession.sessionExpired
+
     val mode: Flow<AuthMode> = sessionStore.session.map { if (it != null) AuthMode.Vk else AuthMode.SignedOut }
 
     suspend fun requestQr(): QrCode {
@@ -55,6 +59,7 @@ class AuthRepository @Inject constructor(
 
     suspend fun signOut() {
         webSession.signOut()
+        webAudio.clearCache()
         trackDao.clear()
         playlistRepository.clear()
         runCatching { CookieManager.getInstance().removeAllCookies(null) }

@@ -1,5 +1,6 @@
 package com.vkmusic.ui.screens.login
 
+import com.vkmusic.data.toUserMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vkmusic.data.repository.AuthRepository
@@ -127,7 +128,7 @@ class LoginViewModel @Inject constructor(
             }
             if (error is CancellationException) throw error
             if (error !is IOException) {
-                _state.update { it.copy(isLoading = false, reconnecting = false, error = error.message ?: fallback) }
+                _state.update { it.copy(isLoading = false, reconnecting = false, error = error.toUserMessage(fallback)) }
                 return null
             }
             _state.update { it.copy(reconnecting = true) }

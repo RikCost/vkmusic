@@ -1,5 +1,7 @@
 package com.vkmusic.data.export
 
+import com.vkmusic.data.HttpStatusException
+import kotlinx.coroutines.ensureActive
 import com.vkmusic.data.model.Track
 import com.vkmusic.data.repository.TrackUrlResolver
 import kotlinx.coroutines.Dispatchers
@@ -120,7 +122,7 @@ class Mp3Exporter @Inject constructor(
 
     private suspend fun downloadBytes(url: String, onProgress: suspend (Int) -> Unit): ByteArray = withContext(Dispatchers.IO) {
         okHttpClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            if (!response.isSuccessful) throw HttpStatusException(response.code)
             val body = response.body
             val total = body.contentLength()
             val out = ByteArrayOutputStream(if (total > 0) total.toInt() else DEFAULT_BUFFER)
@@ -129,6 +131,8 @@ class Mp3Exporter @Inject constructor(
                 var read = 0L
                 var lastPercent = -1
                 while (true) {
+                    // Отмена задачи (WorkManager, кнопка «Отменить») не ждёт конца скачивания.
+                    ensureActive()
                     val n = input.read(buffer)
                     if (n < 0) break
                     out.write(buffer, 0, n)

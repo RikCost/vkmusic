@@ -34,6 +34,8 @@ class RootViewModel @Inject constructor(
 
     val player = playerConnection.player
 
+    val sessionExpired = authRepository.sessionExpired
+
     fun signOut() {
         // Сначала очистить очередь: тогда сервис, сохраняющий её при паузе, увидит пустой плеер.
         player.value?.run {

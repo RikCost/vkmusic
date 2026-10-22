@@ -1,5 +1,6 @@
 package com.vkmusic.ui.screens.artist
 
+import com.vkmusic.data.toUserMessage
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -53,7 +54,7 @@ class ArtistViewModel @Inject constructor(
         refresh()
         viewModelScope.launch {
             _albums.value = runCatching { api.getArtistAlbums(route.artistId) }
-                .fold({ LoadState(it) }, { LoadState(emptyList(), error = it.message ?: "Альбомы недоступны") })
+                .fold({ LoadState(it) }, { LoadState(emptyList(), error = it.toUserMessage("Альбомы недоступны")) })
         }
     }
 

@@ -1,5 +1,6 @@
 package com.vkmusic.data.export
 
+import com.vkmusic.data.toUserMessage
 import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
@@ -36,9 +37,9 @@ class Mp3ExportWorker @AssistedInject constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (e: java.io.IOException) {
-            if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else failed(e.message ?: "Ошибка сети")
+            if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else failed(e.toUserMessage("Ошибка сети"))
         } catch (e: Exception) {
-            failed(e.message ?: e.javaClass.simpleName)
+            failed(e.toUserMessage())
         }
     }
 
