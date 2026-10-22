@@ -2,6 +2,11 @@
 
 package com.vkmusic.ui.screens.player
 
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -44,7 +49,9 @@ fun MiniPlayer(
     val previous = rememberPreviousButtonState(player)
     val next = rememberNextButtonState(player)
     val colors = MaterialTheme.colorScheme
-    val fraction = if (progress.durationMs > 0) (progress.currentPositionMs.toFloat() / progress.durationMs).coerceIn(0f, 1f) else 0f
+    val target = if (progress.durationMs > 0) (progress.currentPositionMs.toFloat() / progress.durationMs).coerceIn(0f, 1f) else 0f
+    // Позиция приходит раз в полсекунды: полоска доезжает плавно, а не прыгает рывками.
+    val fraction by animateFloatAsState(target, tween(500, easing = LinearEasing), label = "mini_progress")
 
     Column(
         modifier = modifier
@@ -66,7 +73,7 @@ fun MiniPlayer(
                     text = metadata.title?.toString().orEmpty(),
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.basicMarquee(initialDelayMillis = MARQUEE_DELAY_MS),
                 )
                 Text(
                     text = metadata.artist?.toString().orEmpty(),
@@ -86,3 +93,5 @@ fun MiniPlayer(
         }
     }
 }
+
+private const val MARQUEE_DELAY_MS = 2_000

@@ -1,5 +1,7 @@
 package com.vkmusic.ui.screens.playlists
 
+import com.vkmusic.ui.plural
+import com.vkmusic.ui.formatTracks
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -162,8 +164,8 @@ private fun PlaylistHeader(
                     Text(playlist.subtitle, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 }
                 val stats = listOfNotNull(
-                    playlist.plays.takeIf { it > 0 }?.let { "${formatCount(it)} прослушиваний" },
-                    "${tracks.size.takeIf { it > 0 } ?: playlist.trackCount} треков",
+                    playlist.plays.takeIf { it > 0 }?.let { "${formatCount(it)} ${plural(it, "прослушивание", "прослушивания", "прослушиваний")}" },
+                    formatTracks(tracks.size.takeIf { it > 0 } ?: playlist.trackCount),
                     tracks.sumOf { it.durationSec.toLong() }.takeIf { it > 0 }?.let(::formatTotalDuration),
                 ).joinToString(" • ")
                 Text(stats, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))

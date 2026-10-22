@@ -1,5 +1,6 @@
 package com.vkmusic.ui.screens.friends
 
+import com.vkmusic.ui.formatTracks
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -44,7 +45,7 @@ class FriendsViewModel @Inject constructor(private val api: VkAudioRepository) :
     }
 
     override suspend fun load() = api.getFriends().map {
-        OwnerItem(it.id, it.name, it.photoUrl, it.trackCount.takeIf { count -> count > 0 }?.let { count -> "$count треков" })
+        OwnerItem(it.id, it.name, it.photoUrl, it.trackCount.takeIf { count -> count > 0 }?.let(::formatTracks))
     }
 }
 

@@ -1,5 +1,6 @@
 package com.vkmusic.ui.components
 
+import com.vkmusic.ui.formatTracks
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -87,7 +88,7 @@ private fun BulkDownloadDialog(kind: BulkKind, tracks: List<Track>, skipped: Int
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("${kind.title}: $total треков?") },
+        title = { Text("${kind.title}: ${formatTracks(total)}?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(

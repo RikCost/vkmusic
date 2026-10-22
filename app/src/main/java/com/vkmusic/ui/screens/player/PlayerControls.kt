@@ -2,6 +2,12 @@
 
 package com.vkmusic.ui.screens.player
 
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Pause
@@ -43,11 +49,18 @@ fun LargePlayPauseButton(player: Player, size: Dp = 72.dp) {
 
 @Composable
 private fun PlayPauseIcon(showPlay: Boolean, modifier: Modifier = Modifier) {
-    Icon(
-        imageVector = if (showPlay) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
-        contentDescription = if (showPlay) "Воспроизвести" else "Пауза",
-        modifier = modifier,
-    )
+    // Значки сменяют друг друга с лёгким масштабом, а не подменяются мгновенно.
+    AnimatedContent(
+        targetState = showPlay,
+        transitionSpec = { (fadeIn() + scaleIn(initialScale = 0.6f)) togetherWith (fadeOut() + scaleOut(targetScale = 0.6f)) },
+        label = "play_pause",
+    ) { play ->
+        Icon(
+            imageVector = if (play) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
+            contentDescription = if (play) "Воспроизвести" else "Пауза",
+            modifier = modifier,
+        )
+    }
 }
 
 @Composable

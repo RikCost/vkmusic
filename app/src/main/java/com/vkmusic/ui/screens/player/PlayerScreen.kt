@@ -2,6 +2,12 @@
 
 package com.vkmusic.ui.screens.player
 
+import androidx.media3.ui.compose.state.rememberPlayPauseButtonState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -159,6 +165,13 @@ private fun ColumnScope.PlayerContent(player: Player, actions: TrackActionsViewM
     val track = itemState.mediaItem?.toTrack()
     val navigator = LocalNavigator.current
 
+    // На паузе обложка чуть отступает назад и пружинит обратно при воспроизведении.
+    val paused = rememberPlayPauseButtonState(player).showPlay
+    val coverScale by animateFloatAsState(
+        targetValue = if (paused) PAUSED_COVER_SCALE else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "cover_scale",
+    )
     Spacer(Modifier.height(12.dp))
     Artwork(
         url = metadata.artworkUri?.toString(),
@@ -166,7 +179,11 @@ private fun ColumnScope.PlayerContent(player: Player, actions: TrackActionsViewM
         cornerRadius = 8.dp,
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(1f),
+            .aspectRatio(1f)
+            .graphicsLayer {
+                scaleX = coverScale
+                scaleY = coverScale
+            },
     )
     Spacer(Modifier.height(28.dp))
     Column(Modifier.fillMaxWidth()) {
@@ -174,7 +191,7 @@ private fun ColumnScope.PlayerContent(player: Player, actions: TrackActionsViewM
             text = metadata.title?.toString() ?: "Ничего не играет",
             style = MaterialTheme.typography.headlineSmall,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.basicMarquee(initialDelayMillis = 2_000),
         )
         val artistId = track?.artistId
         Text(
@@ -239,6 +256,8 @@ private fun TrackActionsRow(track: Track, actions: TrackActionsViewModel, player
     }
     if (lyricsOpen) LyricsSheet(track, onDismiss = { lyricsOpen = false })
 }
+
+private const val PAUSED_COVER_SCALE = 0.88f
 
 private fun formatSpeed(speed: Float): String = speed.toString().removeSuffix(".0")
 

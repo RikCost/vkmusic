@@ -1,5 +1,8 @@
 package com.vkmusic.ui.components
 
+import coil3.request.crossfade
+import coil3.request.ImageRequest
+import coil3.compose.LocalPlatformContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,8 +32,9 @@ fun Artwork(
     Box(modifier.clip(RoundedCornerShape(cornerRadius))) {
         PlaceholderArtwork(key)
         if (url != null) {
+            // Обложка проявляется поверх заглушки, а не появляется рывком.
             AsyncImage(
-                model = url,
+                model = ImageRequest.Builder(LocalPlatformContext.current).data(url).crossfade(true).build(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),

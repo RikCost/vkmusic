@@ -171,12 +171,14 @@ class VkWebAudioRepository(
     override suspend fun getMyPlaylists(): List<Playlist> = getUserPlaylists(userIdProvider())
 
     // Официальный список альбомов надёжнее (main_artists есть всегда), веб-список дополняет его теми,
-    // что VK пометил как официальные; любой из источников может не ответить.
-    override suspend fun getMyAlbums(): List<Playlist> {
-        val fromOfficial = runCatching { official.getMyAlbums() }
-        val fromWeb = runCatching { getMyPlaylists().filter { it.isAlbum } }
+    // что VK пометил как официальные; любой из источников может не ответить. Запрашиваются параллельно.
+    override suspend fun getMyAlbums(): List<Playlist> = coroutineScope {
+        val officialAlbums = async { runCatching { official.getMyAlbums() } }
+        val webAlbums = async { runCatching { getMyPlaylists().filter { it.isAlbum } } }
+        val fromOfficial = officialAlbums.await()
+        val fromWeb = webAlbums.await()
         if (fromOfficial.isFailure && fromWeb.isFailure) throw fromOfficial.exceptionOrNull()!!
-        return (fromOfficial.getOrDefault(emptyList()) + fromWeb.getOrDefault(emptyList())).distinctBy { it.id }
+        (fromOfficial.getOrDefault(emptyList()) + fromWeb.getOrDefault(emptyList())).distinctBy { it.id }
     }
 
     // owner_playlists: payload[1] = [список, всего]; строка вместо списка — «Access denied».

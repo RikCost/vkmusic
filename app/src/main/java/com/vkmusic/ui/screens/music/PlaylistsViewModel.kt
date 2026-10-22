@@ -54,9 +54,11 @@ class AlbumsViewModel @Inject constructor(
     private val loading = MutableStateFlow(true)
     private val error = MutableStateFlow<String?>(null)
 
+    // Альбомы, уже найденные среди загруженных плейлистов, видны сразу — полный список догружается.
     val state: StateFlow<LoadState<List<Playlist>>> =
-        combine(playlistRepository.albums, loading, error) { albums, isLoading, error -> LoadState(albums, isLoading, error) }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LoadState(emptyList(), isLoading = true))
+        combine(playlistRepository.albums, playlistRepository.playlists, loading, error) { albums, playlists, isLoading, error ->
+            LoadState((albums + playlists.filter { it.isAlbum }).distinctBy { it.id }, isLoading, error)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LoadState(emptyList(), isLoading = true))
 
     init {
         refresh()

@@ -1,5 +1,6 @@
 package com.vkmusic.ui.screens.settings
 
+import com.vkmusic.ui.formatTracks
 import android.content.ClipData
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -249,7 +250,7 @@ private fun DownloadsSection(viewModel: SettingsViewModel) {
     if (confirm) {
         ConfirmDialog(
             title = "Удалить все загрузки?",
-            text = "Будут удалены $count треков (${formatBytes(bytes)}). Без сети они перестанут играть; в VK всё останется.",
+            text = "Будет удалено: ${formatTracks(count)} (${formatBytes(bytes)}). Без сети они перестанут играть; в VK всё останется.",
             confirm = "Удалить",
             onConfirm = viewModel::removeAllDownloads,
             onDismiss = { confirm = false },
@@ -374,7 +375,8 @@ private fun ThemeCard(theme: MeridiusTheme?, selected: Boolean, onClick: () -> U
         Text(
             theme?.name ?: "Material You",
             style = MaterialTheme.typography.labelLarge,
-            maxLines = 1,
+            maxLines = 2,
+            minLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
         )

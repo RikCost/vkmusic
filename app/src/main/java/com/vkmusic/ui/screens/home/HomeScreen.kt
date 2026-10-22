@@ -1,5 +1,8 @@
 package com.vkmusic.ui.screens.home
 
+import com.vkmusic.R
+import androidx.compose.ui.res.stringResource
+import com.vkmusic.ui.components.currentIsPlaying
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -86,6 +89,7 @@ fun HomeScreen(
     val mix by viewModel.mix.collectAsStateWithLifecycle()
     val mixSelected by viewModel.mixSelected.collectAsStateWithLifecycle()
     val currentId = currentTrackId(actions)
+    val isPlaying = currentIsPlaying(actions)
     var mixSettingsOpen by rememberSaveable { mutableStateOf(false) }
 
     TrackActionsMessages(actions)
@@ -125,7 +129,7 @@ fun HomeScreen(
                 recommendations.error != null -> item { MessageBox(recommendations.error.orEmpty()) }
                 recommendations.isLoading && recommendations.data.isEmpty() -> item { LoadingBox() }
             }
-            trackItems(recommendations.data, currentId, actions, keyPrefix = "rec_")
+            trackItems(recommendations.data, currentId, actions, keyPrefix = "rec_", isPlaying = isPlaying)
         }
     }
 
@@ -159,7 +163,7 @@ private fun ProfileHeader(profile: Profile?, onSettings: () -> Unit) {
             modifier = Modifier.size(52.dp).clip(CircleShape),
         )
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-            Text(profile?.name ?: "Meridius", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(profile?.name ?: stringResource(R.string.app_name), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             profile?.screenName?.let {
                 Text("@$it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

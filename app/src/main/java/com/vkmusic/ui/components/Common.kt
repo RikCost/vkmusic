@@ -18,9 +18,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material3.PrimaryScrollableTabRow
+import com.vkmusic.ui.formatTracks
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Cancel
 import androidx.compose.material.icons.rounded.Clear
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -33,7 +38,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -94,8 +98,19 @@ fun PageTopBar(title: String, actions: @Composable () -> Unit = {}) {
 }
 
 @Composable
-fun MessageBox(text: String, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+fun MessageBox(text: String, modifier: Modifier = Modifier, icon: ImageVector? = null) {
+    Column(
+        modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 40.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        icon?.let {
+            Icon(
+                it,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.padding(bottom = 12.dp).size(48.dp),
+            )
+        }
         Text(
             text = text,
             textAlign = TextAlign.Center,
@@ -163,7 +178,7 @@ fun PlayAllRow(tracks: List<Track>, actions: TrackActionsViewModel, modifier: Mo
             Icon(Icons.Rounded.SaveAlt, contentDescription = "Сохранить все в MP3")
         }
         Text(
-            "${tracks.size} треков",
+            formatTracks(tracks.size),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -203,15 +218,17 @@ fun List<Track>.filteredBy(query: String): List<Track> {
 
 @Composable
 fun AccentTabs(titles: List<String>, selected: Int, onSelect: (Int) -> Unit) {
-    PrimaryTabRow(
+    // Прокручиваемая строка: вкладка шириной по своему названию и не переносит его на две строки.
+    PrimaryScrollableTabRow(
         selectedTabIndex = selected,
         containerColor = MaterialTheme.colorScheme.background,
+        edgePadding = 8.dp,
     ) {
         titles.forEachIndexed { index, title ->
             Tab(
                 selected = index == selected,
                 onClick = { onSelect(index) },
-                text = { Text(title, style = MaterialTheme.typography.labelLarge) },
+                text = { Text(title, style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false) },
                 unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -226,6 +243,7 @@ fun TrackSourcePage(
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
     emptyText: String = "Здесь пока пусто",
+    emptyIcon: ImageVector = Icons.Rounded.LibraryMusic,
     showPlayAll: Boolean = true,
     downloadsMode: Boolean = false,
     filter: String = "",
@@ -245,10 +263,10 @@ fun TrackSourcePage(
             header = {
                 header()
                 when {
-                    state.error != null -> item { MessageBox(state.error) }
-                    state.isLoading && state.data.isEmpty() -> item { LoadingBox() }
-                    state.data.isEmpty() -> item { MessageBox(emptyText) }
-                    tracks.isEmpty() -> item { MessageBox("Ничего не найдено") }
+                    state.error != null -> item { MessageBox(state.error, icon = Icons.Rounded.CloudOff) }
+                    state.isLoading && state.data.isEmpty() -> item { ListSkeleton() }
+                    state.data.isEmpty() -> item { MessageBox(emptyText, icon = emptyIcon) }
+                    tracks.isEmpty() -> item { MessageBox("Ничего не найдено", icon = Icons.Rounded.SearchOff) }
                     showPlayAll -> item { PlayAllRow(tracks, actions, downloadsMode = downloadsMode) }
                 }
             },
@@ -268,7 +286,7 @@ fun PlaylistCard(playlist: Playlist, onOpen: (Playlist) -> Unit, modifier: Modif
             modifier = Modifier.padding(top = 6.dp),
         )
         Text(
-            playlist.subtitle.ifBlank { "${playlist.trackCount} треков" },
+            playlist.subtitle.ifBlank { formatTracks(playlist.trackCount) },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,

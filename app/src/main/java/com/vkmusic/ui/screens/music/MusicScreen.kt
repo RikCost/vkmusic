@@ -1,5 +1,11 @@
 package com.vkmusic.ui.screens.music
 
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.DownloadForOffline
+import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.CloudOff
+import com.vkmusic.ui.components.ListSkeleton
+import com.vkmusic.ui.formatTracks
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,6 +65,8 @@ fun MusicScreen(contentPadding: PaddingValues) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var creating by rememberSaveable { mutableStateOf(false) }
     val playlistsViewModel: PlaylistsViewModel = hiltViewModel()
+    // Создаётся вместе с экраном, чтобы альбомы грузились заранее, а не после открытия их вкладки.
+    val albumsViewModel: AlbumsViewModel = hiltViewModel()
 
     Column(Modifier.fillMaxSize()) {
         PageTopBar("Музыка") {
@@ -73,7 +81,7 @@ fun MusicScreen(contentPadding: PaddingValues) {
             when (tab) {
                 0 -> MyTracksTab(contentPadding)
                 1 -> PlaylistsTab(contentPadding, playlistsViewModel)
-                2 -> AlbumsTab(contentPadding)
+                2 -> AlbumsTab(contentPadding, albumsViewModel)
                 else -> DownloadsTab(contentPadding)
             }
         }
@@ -114,6 +122,7 @@ private fun DownloadsTab(contentPadding: PaddingValues, viewModel: DownloadsView
         contentPadding = contentPadding.bottomOnly(),
         emptyText = "Скачанных треков нет. Скачать можно из меню трека или целиком плейлист и альбом.",
         downloadsMode = true,
+        emptyIcon = Icons.Rounded.DownloadForOffline,
         filter = filter,
         header = { if (state.data.isNotEmpty()) item { FilterField(filter, { filter = it }) } },
     )
@@ -132,9 +141,9 @@ private fun PlaylistsTab(contentPadding: PaddingValues, viewModel: PlaylistsView
     ) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding.bottomOnly()) {
             when {
-                state.error != null -> item { MessageBox(state.error.orEmpty()) }
-                state.isLoading && state.data.isEmpty() -> item { LoadingBox() }
-                state.data.isEmpty() -> item { MessageBox("Плейлистов пока нет") }
+                state.error != null -> item { MessageBox(state.error.orEmpty(), icon = Icons.Rounded.CloudOff) }
+                state.isLoading && state.data.isEmpty() -> item { ListSkeleton(artworkSize = 56.dp) }
+                state.data.isEmpty() -> item { MessageBox("Плейлистов пока нет", icon = Icons.AutoMirrored.Rounded.QueueMusic) }
             }
             items(state.data, key = { it.id }) { PlaylistRow(it, navigator::openPlaylist) }
         }
@@ -144,7 +153,7 @@ private fun PlaylistsTab(contentPadding: PaddingValues, viewModel: PlaylistsView
 /** Альбомы исполнителей, добавленные к себе, — сеткой обложек, как блоки каталога Meridius. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AlbumsTab(contentPadding: PaddingValues, viewModel: AlbumsViewModel = hiltViewModel()) {
+private fun AlbumsTab(contentPadding: PaddingValues, viewModel: AlbumsViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val navigator = LocalNavigator.current
 
@@ -162,10 +171,10 @@ private fun AlbumsTab(contentPadding: PaddingValues, viewModel: AlbumsViewModel 
         ) {
             val fullWidth: LazyGridItemSpanScope.() -> GridItemSpan = { GridItemSpan(maxLineSpan) }
             when {
-                state.error != null -> item(span = fullWidth) { MessageBox(state.error.orEmpty()) }
+                state.error != null -> item(span = fullWidth) { MessageBox(state.error.orEmpty(), icon = Icons.Rounded.CloudOff) }
                 state.isLoading && state.data.isEmpty() -> item(span = fullWidth) { LoadingBox() }
                 state.data.isEmpty() -> item(span = fullWidth) {
-                    MessageBox("Альбомов пока нет. Добавить альбом к себе можно кнопкой «+» на его странице.")
+                    MessageBox("Альбомов пока нет. Добавить альбом к себе можно кнопкой «+» на его странице.", icon = Icons.Rounded.Album)
                 }
             }
             gridItems(state.data, key = { it.id }) { album -> AlbumCard(album, navigator::openPlaylist) }
@@ -185,7 +194,7 @@ private fun AlbumCard(album: Playlist, onOpen: (Playlist) -> Unit) {
             modifier = Modifier.padding(top = 6.dp),
         )
         Text(
-            album.subtitle.ifBlank { "${album.trackCount} треков" },
+            album.subtitle.ifBlank { formatTracks(album.trackCount) },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -202,7 +211,7 @@ fun PlaylistRow(playlist: Playlist, onOpen: (Playlist) -> Unit) {
         headlineContent = { Text(playlist.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall) },
         supportingContent = {
             Text(
-                listOfNotNull(playlist.subtitle.takeIf { it.isNotBlank() }, "${playlist.trackCount} треков").joinToString(" • "),
+                listOfNotNull(playlist.subtitle.takeIf { it.isNotBlank() }, formatTracks(playlist.trackCount)).joinToString(" • "),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

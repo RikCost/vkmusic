@@ -5,7 +5,11 @@ import com.vkmusic.data.db.TrackDao
 import com.vkmusic.data.db.toEntity
 import com.vkmusic.data.db.toTrack
 import com.vkmusic.data.model.Track
+import com.vkmusic.di.ApplicationScope
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -22,10 +26,15 @@ class LibraryIndex(tracks: List<Track> = emptyList()) {
 class TrackRepository @Inject constructor(
     private val api: VkAudioRepository,
     private val dao: TrackDao,
+    @param:ApplicationScope scope: CoroutineScope,
 ) {
-    val library: Flow<List<Track>> = dao.observeAll().map { entities -> entities.map { it.toTrack() } }
+    // Читается из базы один раз с запуска приложения: тысячи строк «моей музыки» готовы к открытию
+    // вкладки, а не грузятся заново на каждом экране.
+    val library: Flow<List<Track>> = dao.observeAll()
+        .map { entities -> entities.map { it.toTrack() } }
+        .shareIn(scope, SharingStarted.Eagerly, replay = 1)
 
-    val libraryIndex: Flow<LibraryIndex> = library.map(::LibraryIndex)
+    val libraryIndex: Flow<LibraryIndex> = library.map(::LibraryIndex).shareIn(scope, SharingStarted.Eagerly, replay = 1)
 
     suspend fun refreshLibrary() {
         val tracks = buildList {

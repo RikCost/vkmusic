@@ -31,3 +31,16 @@ fun formatDate(epochSec: Long): String {
 
 /** «1 584 013» — разряды через неразрывный пробел. */
 fun formatCount(value: Long): String = String.format(Locale.ROOT, "%,d", value).replace(',', ' ')
+
+/** Русская форма слова для числа: 1 трек, 2 трека, 5 треков, 11 треков, 21 трек. */
+fun plural(count: Long, one: String, few: String, many: String): String {
+    val mod10 = count % 10
+    val mod100 = count % 100
+    return when {
+        mod10 == 1L && mod100 != 11L -> one
+        mod10 in 2..4 && mod100 !in 12..14 -> few
+        else -> many
+    }
+}
+
+fun formatTracks(count: Int): String = "$count ${plural(count.toLong(), "трек", "трека", "треков")}"

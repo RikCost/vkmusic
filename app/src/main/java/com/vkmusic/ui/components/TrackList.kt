@@ -2,6 +2,8 @@
 
 package com.vkmusic.ui.components
 
+import androidx.media3.ui.compose.state.rememberPlayPauseButtonState
+import com.vkmusic.ui.formatTracks
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -32,7 +34,6 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Person
@@ -86,10 +87,11 @@ fun TrackList(
 ) {
     TrackActionsMessages(actions)
     val currentId = currentTrackId(actions)
+    val isPlaying = currentIsPlaying(actions)
 
     LazyColumn(modifier = modifier.fillMaxSize(), contentPadding = contentPadding) {
         header()
-        trackItems(tracks, currentId, actions, onPlay)
+        trackItems(tracks, currentId, actions, onPlay, isPlaying = isPlaying)
     }
 }
 
@@ -100,12 +102,14 @@ fun LazyListScope.trackItems(
     actions: TrackActionsViewModel,
     onPlay: ((Int) -> Unit)? = null,
     keyPrefix: String = "",
+    isPlaying: Boolean = false,
 ) {
     itemsIndexed(tracks, key = { index, track -> "$keyPrefix${index}_${track.id}" }) { index, track ->
         TrackRow(
             track = track,
             index = index,
             isCurrent = track.id == currentId,
+            isPlaying = isPlaying,
             onClick = { onPlay?.invoke(index) ?: actions.play(tracks, index) },
             actions = actions,
         )
@@ -116,6 +120,13 @@ fun LazyListScope.trackItems(
 fun currentTrackId(actions: TrackActionsViewModel): String? {
     val player by actions.player.collectAsStateWithLifecycle()
     return player?.let { currentMediaId(it) }
+}
+
+/** Играет ли сейчас текущий трек (а не стоит на паузе). */
+@Composable
+fun currentIsPlaying(actions: TrackActionsViewModel): Boolean {
+    val player by actions.player.collectAsStateWithLifecycle()
+    return player?.let { !rememberPlayPauseButtonState(it).showPlay } ?: false
 }
 
 @Composable
@@ -138,6 +149,7 @@ fun TrackRow(
     onClick: () -> Unit,
     actions: TrackActionsViewModel,
     extraMenu: (@Composable (close: () -> Unit) -> Unit)? = null,
+    isPlaying: Boolean = false,
 ) {
     val downloads by actions.downloads.collectAsStateWithLifecycle()
     val exports by actions.exports.collectAsStateWithLifecycle()
@@ -157,7 +169,7 @@ fun TrackRow(
     ) {
         Box(Modifier.width(32.dp), contentAlignment = Alignment.Center) {
             if (isCurrent) {
-                Icon(Icons.Rounded.GraphicEq, contentDescription = "Играет", tint = colors.primary, modifier = Modifier.size(18.dp))
+                PlayingBars(isPlaying)
             } else {
                 Text("${index + 1}", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
             }
@@ -365,7 +377,7 @@ private fun PlaylistChoiceRow(choice: PlaylistChoice, isPending: Boolean, onTogg
     val playlist = choice.playlist
     ListItem(
         headlineContent = { Text(playlist.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        supportingContent = { Text("${playlist.trackCount} треков") },
+        supportingContent = { Text(formatTracks(playlist.trackCount)) },
         leadingContent = { Artwork(playlist.coverUrl, playlist.id, Modifier.size(40.dp)) },
         trailingContent = {
             Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
