@@ -1,9 +1,13 @@
 package com.vkmusic.ui
 
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.material3.Surface
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Snackbar
 import android.app.Activity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -99,13 +103,8 @@ fun MuVkRoot(viewModel: RootViewModel = hiltViewModel()) {
                 snackbarHost = {
                     // Чуть выше низа экрана, чтобы не закрывать кнопки трека, и полупрозрачно — видно, что под ним.
                     val lift = if (destination?.hasRoute<PlayerRoute>() == true) PLAYER_SNACKBAR_LIFT else SNACKBAR_LIFT
-                    SnackbarHost(snackbarHostState, modifier = Modifier.padding(bottom = lift)) { data ->
-                        Snackbar(
-                            snackbarData = data,
-                            shape = RoundedCornerShape(12.dp),
-                            containerColor = MaterialTheme.colorScheme.inverseSurface.copy(alpha = SNACKBAR_ALPHA),
-                            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-                        )
+                    SnackbarHost(snackbarHostState, modifier = Modifier.fillMaxWidth().padding(bottom = lift)) { data ->
+                        MessageToast(data.visuals.message)
                     }
                 },
                 bottomBar = {
@@ -149,6 +148,26 @@ fun MuVkRoot(viewModel: RootViewModel = hiltViewModel()) {
                     composable<PlayerRoute> { PlayerScreen(player = player, onBack = navController::popBackStack) }
                 }
             }
+        }
+    }
+}
+
+/** Уведомление-«пилюля»: по центру экрана и по ширине текста, а не во всю ширину. */
+@Composable
+private fun MessageToast(message: String) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 32.dp), contentAlignment = Alignment.Center) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = SNACKBAR_ALPHA),
+            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+            shadowElevation = 4.dp,
+        ) {
+            Text(
+                message,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+            )
         }
     }
 }
