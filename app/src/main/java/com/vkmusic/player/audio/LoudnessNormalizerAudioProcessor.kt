@@ -2,6 +2,7 @@ package com.vkmusic.player.audio
 
 import androidx.media3.common.util.UnstableApi
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.log10
 import kotlin.math.pow
@@ -36,13 +37,15 @@ class LoudnessNormalizerAudioProcessor(private val effects: AudioEffects) : Floa
     private var targetGain = 1.0
     private var smoothing = 0.0
 
+    // Пиковый лимитер: огибающая пиков отпускается плавно, а нарастает мгновенно на том же отсчёте,
+    // поэтому усиленный тихий трек не выходит за [LIMIT_CEILING] и не хрипит на ударных.
+    private var peakEnvelope = 0.0
+    private var limiterRelease = 0.0
+
+    override val isEnabled: Boolean get() = effects.normalizer.enabled
+
     override fun process(samples: FloatArray, frames: Int) {
         val settings = effects.normalizer
-        if (!settings.enabled) {
-            currentGain = 1.0
-            targetGain = 1.0
-            return
-        }
         for (frame in 0 until frames) {
             var weighted = 0.0
             for (channel in 0 until channelCount) {
@@ -55,9 +58,15 @@ class LoudnessNormalizerAudioProcessor(private val effects: AudioEffects) : Floa
             if (++blockFrames >= framesPerBlock) closeBlock(settings.targetLufs.toDouble(), settings.maxGainDb.toDouble())
 
             currentGain += (targetGain - currentGain) * smoothing
+            var peak = 0.0
+            for (channel in 0 until channelCount) {
+                peak = maxOf(peak, abs(samples[frame * channelCount + channel] * currentGain))
+            }
+            peakEnvelope = maxOf(peak, peakEnvelope * limiterRelease)
+            val gain = if (peakEnvelope > LIMIT_CEILING) currentGain * LIMIT_CEILING / peakEnvelope else currentGain
             for (channel in 0 until channelCount) {
                 val index = frame * channelCount + channel
-                samples[index] = (samples[index] * currentGain).toFloat()
+                samples[index] = (samples[index] * gain).toFloat()
             }
         }
     }
@@ -68,7 +77,11 @@ class LoudnessNormalizerAudioProcessor(private val effects: AudioEffects) : Floa
             highPass = highPass(sampleRate.toDouble())
             framesPerBlock = sampleRate / 10
             smoothing = 1.0 - exp(-1.0 / (GAIN_TIME_CONSTANT_SEC * sampleRate))
+            limiterRelease = exp(-1.0 / (LIMITER_RELEASE_SEC * sampleRate))
         }
+        currentGain = 1.0
+        targetGain = 1.0
+        peakEnvelope = 0.0
         filterState = Array(channelCount) { DoubleArray(8) }
         blocks.fill(0.0)
         blockCount = 0
@@ -123,6 +136,10 @@ class LoudnessNormalizerAudioProcessor(private val effects: AudioEffects) : Floa
         const val MIN_BLOCKS = 4
         const val ABSOLUTE_GATE_LUFS = -70.0
         const val GAIN_TIME_CONSTANT_SEC = 0.5
+
+        // −0.2 дБ: запас до предела 16-битного отсчёта; отпускание 150 мс — без «накачки» громкости.
+        const val LIMIT_CEILING = 0.977
+        const val LIMITER_RELEASE_SEC = 0.15
 
         // Коэффициенты K-фильтра BS.1770, пересчитанные под частоту дискретизации
         // (как в libebur128: полка 1681.97 Гц +4 дБ, ФВЧ 38.13 Гц).

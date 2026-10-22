@@ -59,6 +59,22 @@ class ExportFormatsTest {
     }
 
     @Test
+    fun `duplicate packets and false sync bytes do not leak into audio`() {
+        val extractor = TsAudioExtractor()
+        val pesHeader = byteArrayOf(0, 0, 1, 0xC0.toByte(), 0, 0, 0x80.toByte(), 0, 0)
+        val first = packet(AUDIO_PID, start = true, pesHeader + ByteArray(175) { 'A'.code.toByte() }, continuity = 0)
+        val second = packet(AUDIO_PID, start = false, ByteArray(184) { 'B'.code.toByte() }, continuity = 1)
+        // Испорченное начало сегмента с ложным 0x47, за которым идёт «заголовок» аудио-PID.
+        val garbage = byteArrayOf(1, 2, 0x47, (AUDIO_PID shr 8).toByte(), (AUDIO_PID and 0xFF).toByte(), 0x11, 'X'.code.toByte(), 9, 9)
+        extractor.feed(garbage + pat() + pmt(streamType = 0x03) + first + second + second)
+
+        val audio = extractor.result().first
+
+        assertEquals(175 + 184, audio.size)
+        assertTrue(audio.none { it == 'X'.code.toByte() })
+    }
+
+    @Test
     fun `aac stream type is reported as aac`() {
         val extractor = TsAudioExtractor()
         val pesHeader = byteArrayOf(0, 0, 1, 0xC0.toByte(), 0, 0, 0x80.toByte(), 0, 0)
@@ -83,8 +99,8 @@ class ExportFormatsTest {
         assertEquals("AC_DC - Back In Black_", ExportStorage.sanitize("AC/DC - Back In Black?"))
     }
 
-    private fun packet(pid: Int, start: Boolean, payload: ByteArray): ByteArray {
-        val header = byteArrayOf(0x47, ((if (start) 0x40 else 0) or (pid shr 8)).toByte(), (pid and 0xFF).toByte(), 0x10)
+    private fun packet(pid: Int, start: Boolean, payload: ByteArray, continuity: Int = 0): ByteArray {
+        val header = byteArrayOf(0x47, ((if (start) 0x40 else 0) or (pid shr 8)).toByte(), (pid and 0xFF).toByte(), (0x10 or continuity).toByte())
         return header + payload.copyOf(184).also { bytes -> for (i in payload.size until 184) bytes[i] = 0xFF.toByte() }
     }
 

@@ -19,6 +19,12 @@ class EqualizerAudioProcessor(private val effects: AudioEffects) : FloatPcmAudio
     private var appliedSettings: EqualizerSettings? = null
     private var filters: List<Biquad> = emptyList()
 
+    // Предусиление: подъём полос сверх 0 дБ иначе выводит пики за предел и они обрезаются с хрипом.
+    // Общий уровень опускается на самый сильный подъём — как preamp у аппаратных эквалайзеров.
+    private var preamp = 1.0
+
+    override val isEnabled: Boolean get() = effects.equalizer.enabled
+
     // Состояние Direct Form I: [фильтр][канал] -> x1, x2, y1, y2.
     private var state = Array(0) { Array(0) { DoubleArray(4) } }
 
@@ -30,7 +36,7 @@ class EqualizerAudioProcessor(private val effects: AudioEffects) : FloatPcmAudio
         for (frame in 0 until frames) {
             for (channel in 0 until channelCount) {
                 val index = frame * channelCount + channel
-                var x = samples[index].toDouble()
+                var x = samples[index] * preamp
                 for (f in filters.indices) {
                     val c = filters[f]
                     val s = state[f][channel]
@@ -49,6 +55,7 @@ class EqualizerAudioProcessor(private val effects: AudioEffects) : FloatPcmAudio
     override fun resetState() {
         appliedSettings = null
         filters = emptyList()
+        preamp = 1.0
     }
 
     private fun rebuild(settings: EqualizerSettings) {
@@ -61,6 +68,8 @@ class EqualizerAudioProcessor(private val effects: AudioEffects) : FloatPcmAudio
                 .filter { settings.levels.getOrElse(it) { 0f } != 0f && EqualizerPresets.frequencies[it] < nyquist }
                 .map { peaking(EqualizerPresets.frequencies[it].toDouble(), settings.levels[it].toDouble()) }
         }
+        val maxBoostDb = if (filters.isEmpty()) 0.0 else settings.levels.maxOrNull()?.coerceAtLeast(0f)?.toDouble() ?: 0.0
+        preamp = 10.0.pow(-maxBoostDb / 20.0)
         state = Array(filters.size) { Array(channelCount) { DoubleArray(4) } }
     }
 

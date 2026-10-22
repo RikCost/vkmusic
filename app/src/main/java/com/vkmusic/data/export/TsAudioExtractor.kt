@@ -23,12 +23,20 @@ class TsAudioExtractor {
     // PES-заголовок может прийти не целиком в первом TS-пакете — копим до разбора.
     private var pesHeader: ByteArrayOutputStream? = null
 
+    // continuity_counter последнего аудиопакета: повтор того же счётчика — дубликат пакета (ISO 13818-1).
+    private var lastContinuity = -1
+
     val bytesWritten: Int get() = output.size()
 
     fun feed(data: ByteArray) {
+        // Сегменты HLS — отдельные TS-файлы: счётчик в новом может совпасть с последним прошлого.
+        lastContinuity = -1
         var i = 0
         while (i + PACKET_SIZE <= data.size) {
-            if (data[i] != SYNC) {
+            // Байт 0x47 встречается и внутри данных: после сбоя (например, испорченного первого блока
+            // расшифровки) пакет считается найденным, только если и следующий начинается с 0x47.
+            // Иначе в аудио попадали бы куски чужих байтов — щелчок на стыке сегментов.
+            if (data[i] != SYNC || (i + PACKET_SIZE < data.size && data[i + PACKET_SIZE] != SYNC)) {
                 i++
                 continue
             }
@@ -63,9 +71,15 @@ class TsAudioExtractor {
             audioPid == -1 && payloadUnitStart && looksLikeAudioPes(data, payload, end) -> {
                 // PMT не встретился (или повреждён) — берём первый поток с аудио-PES.
                 audioPid = pid
+                lastContinuity = data[start + 3].toInt() and 0x0F
                 startPes(data, payload, end)
             }
-            pid == audioPid -> if (payloadUnitStart) startPes(data, payload, end) else continuePes(data, payload, end)
+            pid == audioPid -> {
+                val continuity = data[start + 3].toInt() and 0x0F
+                if (continuity == lastContinuity) return
+                lastContinuity = continuity
+                if (payloadUnitStart) startPes(data, payload, end) else continuePes(data, payload, end)
+            }
         }
     }
 
