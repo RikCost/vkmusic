@@ -35,7 +35,8 @@ class LoudnessNormalizerAudioProcessor(private val effects: AudioEffects) : Floa
 
     private var currentGain = 1.0
     private var targetGain = 1.0
-    private var smoothing = 0.0
+    private var riseSmoothing = 0.0
+    private var fallSmoothing = 0.0
 
     // Пиковый лимитер: огибающая пиков отпускается плавно, а нарастает мгновенно на том же отсчёте,
     // поэтому усиленный тихий трек не выходит за [LIMIT_CEILING] и не хрипит на ударных.
@@ -57,7 +58,9 @@ class LoudnessNormalizerAudioProcessor(private val effects: AudioEffects) : Floa
             blockSum += weighted
             if (++blockFrames >= framesPerBlock) closeBlock(settings.targetLufs.toDouble(), settings.maxGainDb.toDouble())
 
-            currentGain += (targetGain - currentGain) * smoothing
+            // Подъём медленный, спад быстрый: после тихого вступления громкая часть не приходит
+            // на полном усилении — оно успевает упасть раньше, чем лимитеру придётся давить пики.
+            currentGain += (targetGain - currentGain) * if (targetGain > currentGain) riseSmoothing else fallSmoothing
             var peak = 0.0
             for (channel in 0 until channelCount) {
                 peak = maxOf(peak, abs(samples[frame * channelCount + channel] * currentGain))
@@ -76,7 +79,8 @@ class LoudnessNormalizerAudioProcessor(private val effects: AudioEffects) : Floa
             shelf = highShelf(sampleRate.toDouble())
             highPass = highPass(sampleRate.toDouble())
             framesPerBlock = sampleRate / 10
-            smoothing = 1.0 - exp(-1.0 / (GAIN_TIME_CONSTANT_SEC * sampleRate))
+            riseSmoothing = 1.0 - exp(-1.0 / (GAIN_RISE_SEC * sampleRate))
+            fallSmoothing = 1.0 - exp(-1.0 / (GAIN_FALL_SEC * sampleRate))
             limiterRelease = exp(-1.0 / (LIMITER_RELEASE_SEC * sampleRate))
         }
         currentGain = 1.0
@@ -135,7 +139,8 @@ class LoudnessNormalizerAudioProcessor(private val effects: AudioEffects) : Floa
         const val WINDOW_BLOCKS = 30
         const val MIN_BLOCKS = 4
         const val ABSOLUTE_GATE_LUFS = -70.0
-        const val GAIN_TIME_CONSTANT_SEC = 0.5
+        const val GAIN_RISE_SEC = 3.0
+        const val GAIN_FALL_SEC = 0.3
 
         // −0.2 дБ: запас до предела 16-битного отсчёта; отпускание 150 мс — без «накачки» громкости.
         const val LIMIT_CEILING = 0.977
