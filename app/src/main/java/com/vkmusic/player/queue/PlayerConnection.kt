@@ -8,6 +8,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.vkmusic.data.api.VkAudioRepository
+import com.vkmusic.data.export.SavedAudioStore
 import com.vkmusic.data.model.Track
 import com.vkmusic.data.repository.DownloadRepository
 import com.vkmusic.data.repository.DownloadStatus
@@ -38,6 +39,7 @@ class PlayerConnection @Inject constructor(
     private val queueExtender: QueueExtender,
     private val trackUrlResolver: TrackUrlResolver,
     private val downloadRepository: DownloadRepository,
+    private val savedAudioStore: SavedAudioStore,
 ) {
     private val _player = MutableStateFlow<Player?>(null)
     val player: StateFlow<Player?> = _player.asStateFlow()
@@ -82,18 +84,20 @@ class PlayerConnection @Inject constructor(
         continuation: (suspend () -> List<Track>)? = null,
     ) {
         val player = _player.value ?: return
-        val playable = tracks.filter { it.isPlayable }.distinctBy { it.id }
+        val playable = tracks.filter { it.isPlayable || savedAudioStore.uriFor(it.id) != null }.distinctBy { it.id }
         if (playable.isEmpty()) return
         queueExtender.source = continuation
         val startId = tracks.getOrNull(startIndex)?.id
         val start = if (shuffle) playable.indices.random() else playable.indexOfFirst { it.id == startId }.coerceAtLeast(0)
+        val startIsLocal = savedAudioStore.uriFor(playable[start].id) != null
         startJob?.cancel()
         startJob = scope.launch {
             // Стартовому треку ссылка нужна сразу; остальные сервис получит по мере продвижения очереди.
-            // Не получилась — старт с запасного трека, как сделал бы сервис, исчерпав попытки: иначе очередь встанет.
-            var resolved = trackUrlResolver.resolve(listOf(playable[start]))
+            // Сохранённому файлом она не нужна вовсе. Не получилась — старт с запасного трека,
+            // как сделал бы сервис, исчерпав попытки: иначе очередь встанет.
+            var resolved = if (startIsLocal) emptyList<Track>() else trackUrlResolver.resolve(listOf(playable[start]))
             var startIndex = start
-            if (resolved.first().url == null) {
+            if (!startIsLocal && resolved.first().url == null) {
                 val fallback = fallbackStarts(playable.size, start, shuffle, START_FALLBACKS)
                 val more = trackUrlResolver.resolve(fallback.map(playable::get))
                 more.indexOfFirst { it.url != null }.takeIf { it >= 0 }?.let { startIndex = fallback[it] }
@@ -103,7 +107,7 @@ class PlayerConnection @Inject constructor(
             ensureActive()
             if (_player.value !== player) return@launch
             val withUrls = resolved.filter { it.url != null }.associateBy { it.id }
-            val items = playable.map { (withUrls[it.id] ?: it).toMediaItem() }
+            val items = playable.map { (withUrls[it.id] ?: it).toMediaItem(savedAudioStore.uriFor(it.id)) }
             player.shuffleModeEnabled = shuffle
             player.setMediaItems(items, startIndex, 0L)
             player.prepare()
@@ -122,12 +126,13 @@ class PlayerConnection @Inject constructor(
     /** @return true, если трек гарантированно сыграет следующим (при перемешивании позиция случайная). */
     fun playNext(track: Track): Boolean {
         val player = _player.value ?: return false
-        if (!track.isPlayable) return false
+        val local = savedAudioStore.uriFor(track.id)
+        if (!track.isPlayable && local == null) return false
         if (player.mediaItemCount == 0) {
             playQueue(listOf(track))
             return true
         }
-        player.addMediaItem(player.currentMediaItemIndex + 1, track.toMediaItem())
+        player.addMediaItem(player.currentMediaItemIndex + 1, track.toMediaItem(local))
         return !player.shuffleModeEnabled
     }
 
@@ -152,19 +157,21 @@ class PlayerConnection @Inject constructor(
                 .filter { it.status == DownloadStatus.Completed }
                 .associate { it.track.id to it.track }
             // Старые ссылки сбрасываются: веб-треки получат свежие по хешам, остальные — через getByIds.
+            // Сохранённым файлом ссылку обновлять незачем — они играются с диска.
+            val local = savedAudioStore.files.value
             val stale = restoredTracks(saved.tracks, downloaded)
             val fresh = withTimeoutOrNull(REFRESH_TIMEOUT_MS) {
-                runCatching { api.getByIds(stale.filter { it.webHashes == null && it.id !in downloaded }) }.getOrNull()
+                runCatching { api.getByIds(stale.filter { it.webHashes == null && it.id !in downloaded && it.id !in local }) }.getOrNull()
             }?.associateBy { it.id }.orEmpty()
-            var tracks = stale.map { old -> fresh[old.id]?.takeIf { it.url != null } ?: old }.filter { it.isPlayable }
+            var tracks = stale.map { old -> fresh[old.id]?.takeIf { it.url != null } ?: old }.filter { it.isPlayable || it.id in local }
             if (tracks.isEmpty()) return@launch
             val index = tracks.indexOfFirst { it.id == saved.tracks.getOrNull(saved.index)?.id }.coerceAtLeast(0)
             // Иначе плеер начнёт с заглушки и потеряет сохранённую позицию.
-            val current = trackUrlResolver.resolve(listOf(tracks[index])).first()
+            val current = if (local.containsKey(tracks[index].id)) tracks[index] else trackUrlResolver.resolve(listOf(tracks[index])).first()
             tracks = tracks.toMutableList().also { it[index] = current }
             ensureActive()
             if (_player.value !== controller || controller.mediaItemCount > 0) return@launch
-            controller.setMediaItems(tracks.map { it.toMediaItem() }, index, saved.positionMs)
+            controller.setMediaItems(tracks.map { it.toMediaItem(local[it.id]?.uri) }, index, saved.positionMs)
             controller.prepare()
             if (settings.playLatestOnStart) controller.play()
         }

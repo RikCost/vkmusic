@@ -18,13 +18,15 @@ private const val UNRESOLVED_SCHEME = "vkaudio"
 
 private val trackJson = Json { ignoreUnknownKeys = true }
 
-fun Track.toMediaItem(): MediaItem {
-    val uri = (url ?: "$UNRESOLVED_SCHEME://resolve/$id").toUri()
+/** [localUri] — файл, сохранённый приложением: он играется вместо ссылки VK и не должен попадать в кэш. */
+fun Track.toMediaItem(localUri: String? = null): MediaItem {
+    val local = localUri?.toUri()
+    val uri = local ?: (url ?: "$UNRESOLVED_SCHEME://resolve/$id").toUri()
     return MediaItem.Builder()
         .setMediaId(id)
         .setUri(uri)
-        .setMimeType(if (isHls) MimeTypes.APPLICATION_M3U8 else null)
-        .setCustomCacheKey(if (isHls) null else id)
+        .setMimeType(if (isHls && local == null) MimeTypes.APPLICATION_M3U8 else null)
+        .setCustomCacheKey(if (isHls || local != null) null else id)
         .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(uri).build())
         .setMediaMetadata(
             MediaMetadata.Builder()

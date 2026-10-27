@@ -18,6 +18,7 @@ import androidx.media3.exoplayer.offline.DefaultDownloaderFactory
 import androidx.media3.exoplayer.offline.DownloadManager
 import com.vkmusic.data.repository.AppSettings
 import com.vkmusic.data.storage.TunableLruCacheEvictor
+import com.vkmusic.player.datasource.PlayerDataSourceFactory
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -43,6 +44,11 @@ annotation class DownloadCache
 @Qualifier
 @Retention(AnnotationRetention.RUNTIME)
 annotation class OfflineUpstream
+
+/** Источник плеера: сеть и кэш — через кэш, сохранённые файлом треки — напрямую с диска. */
+@Qualifier
+@Retention(AnnotationRetention.RUNTIME)
+annotation class PlayerDataSource
 
 @OptIn(UnstableApi::class)
 @Module
@@ -99,17 +105,23 @@ object MediaModule {
             .setCacheWriteDataSinkFactory(null)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
-    // Плеер: пишет в исчезающий кэш, а при попадании в него отсутствующего контента идёт через загрузки.
+    // Плеер: пишет в исчезающий кэш, при попадании в него отсутствующего контента идёт через загрузки,
+    // а сохранённые файлом треки (file://, content://) отдаёт напрямую — без копии в кэше.
     @Provides
     @Singleton
-    fun provideCacheDataSourceFactory(
+    @PlayerDataSource
+    fun providePlayerDataSourceFactory(
         @StreamingCache cache: Cache,
         @OfflineUpstream offlineUpstream: DataSource.Factory,
-    ): CacheDataSource.Factory = CacheDataSource.Factory()
-        .setCache(cache)
-        .setCacheKeyFactory(cacheKeyFactory)
-        .setUpstreamDataSourceFactory(offlineUpstream)
-        .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        upstream: DataSource.Factory,
+    ): DataSource.Factory = PlayerDataSourceFactory(
+        cached = CacheDataSource.Factory()
+            .setCache(cache)
+            .setCacheKeyFactory(cacheKeyFactory)
+            .setUpstreamDataSourceFactory(offlineUpstream)
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR),
+        local = upstream,
+    )
 
     @Provides
     @Singleton

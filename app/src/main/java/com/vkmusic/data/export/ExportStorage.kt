@@ -18,6 +18,9 @@ import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** Куда лёг файл: адрес для воспроизведения и удаления плюс понятное человеку место. */
+data class SavedFile(val uri: String, val location: String, val mimeType: String, val sizeBytes: Long)
+
 /**
  * Куда пишутся сохранённые треки. Папка из настроек — дерево SAF (ACTION_OPEN_DOCUMENT_TREE);
  * без неё — «Музыка/MuVK» через MediaStore (Android 10+, разрешения не нужны), на Android 8–9 —
@@ -28,14 +31,34 @@ class ExportStorage @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val settingsRepository: SettingsRepository,
 ) {
-    /** @return человекочитаемое место сохранения. */
-    suspend fun save(subfolder: String?, fileName: String, mimeType: String, data: ByteArray): String = withContext(Dispatchers.IO) {
+    suspend fun save(subfolder: String?, fileName: String, mimeType: String, data: ByteArray): SavedFile = withContext(Dispatchers.IO) {
         val tree = settingsRepository.settings.first().exportTreeUri
         val folder = subfolder?.let(::sanitize)?.takeIf { it.isNotBlank() }
         when {
             tree != null -> saveToTree(tree.toUri(), folder, fileName, mimeType, data)
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> saveToMediaStore(folder, fileName, mimeType, data)
-            else -> saveToAppFolder(folder, fileName, data)
+            else -> saveToAppFolder(folder, fileName, mimeType, data)
+        }
+    }
+
+    /** Удалить файл, который приложение сохранило ранее. @return false, если провайдер его не принял. */
+    suspend fun delete(uri: String): Boolean = withContext(Dispatchers.IO) {
+        val parsed = uri.toUri()
+        when (parsed.scheme) {
+            "file" -> runCatching { File(parsed.path.orEmpty()).delete() }.getOrDefault(false)
+            else -> runCatching { context.contentResolver.delete(parsed, null, null) > 0 }.getOrDefault(false)
+        }
+    }
+
+    // Файл могли убрать из проводника: реестр сверяется с реальностью, а не верит записи об экспорте.
+    suspend fun exists(uri: String): Boolean = withContext(Dispatchers.IO) {
+        val parsed = uri.toUri()
+        when (parsed.scheme) {
+            "file" -> File(parsed.path.orEmpty()).isFile
+            else -> runCatching {
+                context.contentResolver.query(parsed, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)
+                    ?.use { it.count > 0 } == true
+            }.getOrDefault(false)
         }
     }
 
@@ -48,13 +71,13 @@ class ExportStorage @Inject constructor(
     }
 
     // Доступ к папке могли отозвать в любой момент — на любом шаге это одна понятная ошибка.
-    private fun saveToTree(tree: Uri, folder: String?, fileName: String, mimeType: String, data: ByteArray): String = try {
+    private fun saveToTree(tree: Uri, folder: String?, fileName: String, mimeType: String, data: ByteArray): SavedFile = try {
         writeToTree(tree, folder, fileName, mimeType, data)
     } catch (e: SecurityException) {
         throw IOException("Нет доступа к папке сохранения — выберите её заново в настройках", e)
     }
 
-    private fun writeToTree(tree: Uri, folder: String?, fileName: String, mimeType: String, data: ByteArray): String {
+    private fun writeToTree(tree: Uri, folder: String?, fileName: String, mimeType: String, data: ByteArray): SavedFile {
         val resolver = context.contentResolver
         val rootId = DocumentsContract.getTreeDocumentId(tree)
         var parent = DocumentsContract.buildDocumentUriUsingTree(tree, rootId)
@@ -73,7 +96,12 @@ class ExportStorage @Inject constructor(
             runCatching { DocumentsContract.deleteDocument(resolver, file) }
             throw e
         }
-        return listOfNotNull(displayName(tree.toString()), folder, fileName).joinToString("/")
+        return SavedFile(
+            uri = file.toString(),
+            location = listOfNotNull(displayName(tree.toString()), folder, fileName).joinToString("/"),
+            mimeType = mimeType,
+            sizeBytes = data.size.toLong(),
+        )
     }
 
     private fun findChildDirectory(tree: Uri, parentId: String, name: String): Uri? {
@@ -94,7 +122,7 @@ class ExportStorage @Inject constructor(
     }
 
     @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
-    private fun saveToMediaStore(folder: String?, fileName: String, mimeType: String, data: ByteArray): String {
+    private fun saveToMediaStore(folder: String?, fileName: String, mimeType: String, data: ByteArray): SavedFile {
         val resolver = context.contentResolver
         val relativePath = listOfNotNull(Environment.DIRECTORY_MUSIC, DEFAULT_FOLDER, folder).joinToString("/") + "/"
         val values = ContentValues().apply {
@@ -112,17 +140,17 @@ class ExportStorage @Inject constructor(
             resolver.delete(item, null, null)
             throw e
         }
-        return relativePath + fileName
+        return SavedFile(item.toString(), relativePath + fileName, mimeType, data.size.toLong())
     }
 
-    private fun saveToAppFolder(folder: String?, fileName: String, data: ByteArray): String {
+    private fun saveToAppFolder(folder: String?, fileName: String, mimeType: String, data: ByteArray): SavedFile {
         val root = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: throw IOException("Хранилище недоступно")
         val dir = File(root, listOfNotNull(DEFAULT_FOLDER, folder).joinToString("/")).apply { mkdirs() }
         var target = File(dir, fileName)
         var index = 1
         while (target.exists()) target = File(dir, "${fileName.substringBeforeLast('.')} (${index++}).${fileName.substringAfterLast('.')}")
         target.writeBytes(data)
-        return target.absolutePath
+        return SavedFile(Uri.fromFile(target).toString(), target.absolutePath, mimeType, data.size.toLong())
     }
 
     companion object {

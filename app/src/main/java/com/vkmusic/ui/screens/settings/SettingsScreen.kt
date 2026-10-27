@@ -66,6 +66,7 @@ import com.vkmusic.data.repository.CacheRepository
 import com.vkmusic.data.repository.NormalizerSettings
 import com.vkmusic.data.repository.SettingsRepository
 import com.vkmusic.data.export.ExportStorage
+import com.vkmusic.data.export.SavedAudioStore
 import com.vkmusic.data.repository.DownloadRepository
 import com.vkmusic.data.web.VkWebDiagnostics
 import kotlinx.coroutines.delay
@@ -98,7 +99,13 @@ class SettingsViewModel @Inject constructor(
     private val exportStorage: ExportStorage,
     private val downloadRepository: DownloadRepository,
     private val cacheRepository: CacheRepository,
+    private val savedAudioStore: SavedAudioStore,
 ) : ViewModel() {
+
+    /** Сколько треков сохранено файлами и сколько они весят. */
+    val savedFilesSummary: StateFlow<Pair<Int, Long>> = savedAudioStore.files
+        .map { saved -> saved.size to saved.values.sumOf { it.sizeBytes } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0 to 0L)
 
     /** Сколько офлайн-загрузок и сколько места они занимают (включая недокачанные). */
     val downloadsSummary: StateFlow<Pair<Int, Long>> = downloadRepository.downloads
@@ -348,8 +355,17 @@ private fun ExportFolderSection(treeUri: String?, viewModel: SettingsViewModel) 
     }
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Папка: ${viewModel.exportFolderName(treeUri)}", style = MaterialTheme.typography.bodyLarge)
+        val (savedCount, savedBytes) = viewModel.savedFilesSummary.collectAsStateWithLifecycle().value
+        if (savedCount > 0) {
+            Text(
+                "Сохранено треков: $savedCount • ${formatBytes(savedBytes)}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Text(
-            "Сюда сохраняются треки из меню «Сохранить в MP3»; плейлисты — в подпапку со своим названием.",
+            "Сюда сохраняются треки из меню «Сохранить в MP3»; плейлисты — в подпапку со своим названием. " +
+                "Сохранённый трек играется с этим файлом, а не по ссылке VK.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

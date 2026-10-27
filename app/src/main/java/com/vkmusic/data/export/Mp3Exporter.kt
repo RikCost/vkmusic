@@ -34,8 +34,8 @@ class Mp3Exporter @Inject constructor(
     private val trackUrlResolver: TrackUrlResolver,
     private val storage: ExportStorage,
 ) {
-    /** @return где лежит файл. */
-    suspend fun export(track: Track, subfolder: String?, onProgress: suspend (Int) -> Unit): String {
+    /** @return где лежит файл: адрес для воспроизведения и понятное человеку место. */
+    suspend fun export(track: Track, subfolder: String?, onProgress: suspend (Int) -> Unit): SavedFile {
         val url = freshUrl(track) ?: throw IOException("VK не отдал ссылку на трек")
         val (audio, codec) = if (url.substringBefore('?').endsWith(".m3u8")) {
             downloadHls(url, onProgress)
