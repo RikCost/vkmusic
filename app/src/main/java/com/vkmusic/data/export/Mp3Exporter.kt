@@ -36,13 +36,13 @@ class Mp3Exporter @Inject constructor(
     private val trackUrlResolver: TrackUrlResolver,
     private val storage: ExportStorage,
 ) {
-    /** @return где лежит файл: адрес для воспроизведения и понятное человеку место. */
-    suspend fun export(track: Track, subfolder: String?, onProgress: suspend (Int) -> Unit): SavedFile {
+    /** @return человекочитаемое место, куда лёг файл. */
+    suspend fun export(track: Track, subfolder: String?, onProgress: suspend (Int) -> Unit): String {
         val url = freshUrl(track) ?: throw IOException("VK не отдал ссылку на трек")
         return if (url.substringBefore('?').endsWith(".m3u8")) exportHls(track, url, subfolder, onProgress) else exportDirect(track, url, subfolder, onProgress)
     }
 
-    private suspend fun exportDirect(track: Track, url: String, subfolder: String?, onProgress: suspend (Int) -> Unit): SavedFile {
+    private suspend fun exportDirect(track: Track, url: String, subfolder: String?, onProgress: suspend (Int) -> Unit): String {
         val tag = id3Tag(track, AudioCodec.Mp3)
         return storage.save(subfolder, fileName(track, AudioCodec.Mp3), AudioCodec.Mp3.mimeType) { out ->
             out.write(tag)
@@ -50,7 +50,7 @@ class Mp3Exporter @Inject constructor(
         }
     }
 
-    private suspend fun exportHls(track: Track, playlistUrl: String, subfolder: String?, onProgress: suspend (Int) -> Unit): SavedFile {
+    private suspend fun exportHls(track: Track, playlistUrl: String, subfolder: String?, onProgress: suspend (Int) -> Unit): String {
         var url = playlistUrl
         var text = downloadText(url)
         // Мастер-плейлист: берём первый вариант потока.

@@ -18,7 +18,6 @@ class Mp3ExportWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
     private val exporter: Mp3Exporter,
-    private val savedAudioStore: SavedAudioStore,
     private val json: Json,
     private val cancellations: Mp3ExportCancellations,
 ) : CoroutineWorker(context, params) {
@@ -29,14 +28,12 @@ class Mp3ExportWorker @AssistedInject constructor(
             ?: return failed("Повреждённые данные трека")
         if (cancellations.consume(track.id)) return failed(CANCELLED)
         return try {
-            val file = exporter.export(track, inputData.getString(KEY_FOLDER)) { percent ->
+            val location = exporter.export(track, inputData.getString(KEY_FOLDER)) { percent ->
                 // Отмена уже идущего трека: прерываем на ближайшем обновлении прогресса.
                 if (cancellations.consume(track.id)) throw IllegalStateException(CANCELLED)
                 setProgress(workDataOf(KEY_PERCENT to percent))
             }
-            // Без записи в реестр файл не станет источником воспроизведения: статус берётся оттуда, а не из истории задач.
-            savedAudioStore.put(track.id, file)
-            Result.success(workDataOf(KEY_LOCATION to file.location, KEY_URI to file.uri))
+            Result.success(workDataOf(KEY_LOCATION to location))
         } catch (e: CancellationException) {
             throw e
         } catch (e: java.io.IOException) {
@@ -55,7 +52,6 @@ class Mp3ExportWorker @AssistedInject constructor(
         const val KEY_FOLDER = "folder"
         const val KEY_PERCENT = "percent"
         const val KEY_LOCATION = "location"
-        const val KEY_URI = "uri"
         const val KEY_ERROR = "error"
         private const val MAX_ATTEMPTS = 2
         private const val CANCELLED = "отменено"

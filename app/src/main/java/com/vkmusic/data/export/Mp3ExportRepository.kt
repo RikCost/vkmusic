@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
@@ -40,7 +39,6 @@ class Mp3ExportRepository @Inject constructor(
     @ApplicationContext context: Context,
     private val json: Json,
     private val cancellations: Mp3ExportCancellations,
-    private val savedAudioStore: SavedAudioStore,
     @ApplicationScope scope: CoroutineScope,
 ) {
     private val workManager = WorkManager.getInstance(context)
@@ -54,25 +52,13 @@ class Mp3ExportRepository @Inject constructor(
     val events: Flow<String> = _events.asSharedFlow()
 
     /**
-     * Статусы по трекам: живой прогресс — из WorkManager, «Сохранено» — из реестра файлов.
-     * История задач чистится, а файл остаётся: без реестра трек снова выглядел бы нескачанным.
+     * Статусы по трекам из истории задач WorkManager: прогресс живой, а «Сохранено» держится,
+     * пока систему не попросили почистить историю (обычно сутки) — постоянного реестра файлов нет.
      */
-    val statuses: StateFlow<Map<String, ExportStatus>> = combine(
-        workManager.getWorkInfosByTagFlow(TAG).map { infos -> infos.mapNotNull { info -> info.trackId()?.let { it to info.toStatus() } }.toMap() },
-        savedAudioStore.files,
-    ) { work, saved ->
-        work.toMutableMap().apply {
-            saved.forEach { (trackId, file) ->
-                val busy = work[trackId] is ExportStatus.Queued || work[trackId] is ExportStatus.Running
-                if (!busy) put(trackId, ExportStatus.Saved(file.location))
-            }
-        }
-    }
+    val statuses: StateFlow<Map<String, ExportStatus>> = workManager.getWorkInfosByTagFlow(TAG)
+        .map { infos -> infos.mapNotNull { info -> info.trackId()?.let { it to info.toStatus() } }.toMap() }
         .onEach(::emitTransitions)
         .stateIn(scope, SharingStarted.Eagerly, emptyMap())
-
-    /** Удалить сохранённый файл вместе с записью. @return false, если провайдер не отдал файл. */
-    suspend fun deleteFile(track: Track): Boolean = savedAudioStore.remove(track.id)
 
     fun enqueue(tracks: List<Track>, subfolder: String? = null) {
         val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()

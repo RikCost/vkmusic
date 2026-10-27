@@ -32,8 +32,8 @@
 - Сохранение треков и плейлистов файлами в папку из настроек (SAF; по умолчанию «Музыка/MuVK»):
   прямой MP3 скачивается как есть, HLS расшифровывается (AES-128) и аудио вынимается из MPEG-TS
   без перекодирования; теги ID3v2.3 с обложкой. Если VK отдаёт AAC, файл сохраняется как `.aac`.
-  Сохранённый файл становится источником воспроизведения: адрес лежит в Room (`exported_tracks`),
-  трек играет без сети и без `reload_audios`, из меню трека его можно удалить вместе с записью.
+  Файл — копия для плеера устройства: приложение продолжает играть трек по ссылке VK, а отметка
+  «Сохранено» держится, пока жива история задач WorkManager.
 - Поиск, рекомендации, альбомы/плейлисты, музыка друзей, создание плейлистов.
 - Токен и cookie веб-сессии хранятся в DataStore в виде AES-GCM-шифра, ключ — в AndroidKeyStore (`KeystoreCipher`).
 
@@ -69,16 +69,14 @@ app/src/main/java/com/vkmusic/
 ├── data/web/           веб-VK как в Meridius: VkWebClient (cookie), VkQrAuth (QR-вход, web_token),
 │                       VkWebAudioRepository (al_audio.php), AudioUrlDecoder, WebAudioParser
 ├── data/export/        сохранение файлами: HlsPlaylist, TsAudioExtractor, Id3Writer, ExportStorage,
-│                       Mp3Exporter, Mp3ExportWorker (WorkManager), Mp3ExportRepository,
-│                       SavedAudioStore (реестр сохранённых файлов — источник воспроизведения)
+│                       Mp3Exporter, Mp3ExportWorker (WorkManager), Mp3ExportRepository
 ├── data/auth/          SessionStore, WebSessionManager (обновление токена), KeystoreCipher
-├── data/db/            Room: TrackEntity/TrackDao (кэш «моей музыки»), ExportedTrackEntity/Dao, AppDatabase
+├── data/db/            Room: TrackEntity/TrackDao (кэш «моей музыки»), AppDatabase
 ├── data/repository/    AuthRepository, TrackRepository, DownloadRepository, SettingsRepository,
 │                       CacheRepository (объём и очистка кэша)
 ├── data/storage/       TunableLruCacheEvictor — LRU с лимитом, который меняется из настроек
 ├── di/                 Hilt-модули: NetworkModule, MediaModule (два SimpleCache, DownloadManager), DataModule
 ├── player/             PlaybackService (MediaSessionService), очередь, MediaItemMapper
-├── player/datasource/  PlayerDataSourceFactory: сохранённые файлом треки читаются мимо кэша
 ├── player/audio/       эквалайзер и нормализатор громкости (AudioProcessor Media3)
 ├── ui/screens/         login, home, music, search (Обзор), friends (друзья/сообщества), playlists,
 │                       artist, similar, settings, player

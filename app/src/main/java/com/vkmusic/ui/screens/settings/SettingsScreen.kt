@@ -1,8 +1,6 @@
 package com.vkmusic.ui.screens.settings
 
 import com.vkmusic.ui.formatTracks
-import com.vkmusic.ui.plural
-import com.vkmusic.ui.LocalSnackbarHostState
 import android.content.ClipData
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -47,7 +45,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,13 +66,9 @@ import com.vkmusic.data.repository.CacheRepository
 import com.vkmusic.data.repository.NormalizerSettings
 import com.vkmusic.data.repository.SettingsRepository
 import com.vkmusic.data.export.ExportStorage
-import com.vkmusic.data.export.SavedAudioStore
 import com.vkmusic.data.repository.DownloadRepository
 import com.vkmusic.data.web.VkWebDiagnostics
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.flow
 import com.vkmusic.player.audio.EqualizerPresets
 import com.vkmusic.ui.components.AppVersionText
@@ -105,13 +98,7 @@ class SettingsViewModel @Inject constructor(
     private val exportStorage: ExportStorage,
     private val downloadRepository: DownloadRepository,
     private val cacheRepository: CacheRepository,
-    private val savedAudioStore: SavedAudioStore,
 ) : ViewModel() {
-
-    /** Сколько треков сохранено файлами и сколько они весят. */
-    val savedFilesSummary: StateFlow<Pair<Int, Long>> = savedAudioStore.files
-        .map { saved -> saved.size to saved.values.sumOf { it.sizeBytes } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0 to 0L)
 
     /** Сколько офлайн-загрузок и сколько места они занимают (включая недокачанные). */
     val downloadsSummary: StateFlow<Pair<Int, Long>> = downloadRepository.downloads
@@ -131,24 +118,6 @@ class SettingsViewModel @Inject constructor(
     fun clearCache() = launch { runCatching { cacheRepository.clear() } }
 
     fun removeAllDownloads() = downloadRepository.removeAll()
-
-    /** Сообщения о результатах очистки — в тот же снекбар, что и у действий с треками. */
-    private val _messages = Channel<String>(Channel.BUFFERED)
-    val messages: Flow<String> = _messages.receiveAsFlow()
-
-    /** Удалить сохранённые MP3: файлы из папки и записи реестра. Треки в музыке остаются. */
-    fun removeAllSavedFiles() {
-        viewModelScope.launch {
-            val stuck = savedAudioStore.removeAll()
-            _messages.send(
-                if (stuck == 0) {
-                    "Сохранённые файлы удалены"
-                } else {
-                    "Записи сняты, но $stuck ${plural(stuck.toLong(), "файл", "файла", "файлов")} папка не отдала — удалите их вручную"
-                },
-            )
-        }
-    }
 
     fun exportFolderName(treeUri: String?): String = exportStorage.displayName(treeUri)
 
@@ -370,10 +339,6 @@ private fun formatBytes(bytes: Long): String {
 @Composable
 private fun ExportFolderSection(treeUri: String?, viewModel: SettingsViewModel) {
     val context = LocalContext.current
-    val snackbar = LocalSnackbarHostState.current
-    val (savedCount, savedBytes) = viewModel.savedFilesSummary.collectAsStateWithLifecycle().value
-    var confirmCleanup by remember { mutableStateOf(false) }
-    LaunchedEffect(viewModel) { viewModel.messages.collect { snackbar.showSnackbar(it) } }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         // Без постоянного разрешения доступ к папке пропадёт после перезапуска.
@@ -383,16 +348,8 @@ private fun ExportFolderSection(treeUri: String?, viewModel: SettingsViewModel) 
     }
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Папка: ${viewModel.exportFolderName(treeUri)}", style = MaterialTheme.typography.bodyLarge)
-        if (savedCount > 0) {
-            Text(
-                "Сохранено треков: $savedCount • ${formatBytes(savedBytes)}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
         Text(
-            "Сюда сохраняются треки из меню «Сохранить в MP3»; плейлисты — в подпапку со своим названием. " +
-                "Сохранённый трек играется с этим файлом, а не по ссылке VK.",
+            "Сюда сохраняются треки из меню «Сохранить в MP3»; плейлисты — в подпапку со своим названием.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -410,17 +367,6 @@ private fun ExportFolderSection(treeUri: String?, viewModel: SettingsViewModel) 
                 }) { Text("По умолчанию") }
             }
         }
-        OutlinedButton(onClick = { confirmCleanup = true }, enabled = savedCount > 0) { Text("Удалить сохранённые файлы") }
-    }
-    if (confirmCleanup) {
-        ConfirmDialog(
-            title = "Удалить сохранённые MP3?",
-            text = "Будет удалено: ${formatTracks(savedCount)} (${formatBytes(savedBytes)}) из папки сохранения вместе с записями о них. " +
-                "Сами треки останутся в вашей музыке и снова будут играть из VK.",
-            confirm = "Удалить",
-            onConfirm = viewModel::removeAllSavedFiles,
-            onDismiss = { confirmCleanup = false },
-        )
     }
 }
 

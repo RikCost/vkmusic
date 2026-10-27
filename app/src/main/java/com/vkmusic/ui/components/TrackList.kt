@@ -253,13 +253,10 @@ private fun TrackMenuButton(
                 MenuAction("Перейти к исполнителю", Icons.Rounded.Person, closing { navigator.openArtist(artistId, track.artist) })
             }
             MenuAction("Поделиться", Icons.Rounded.Share, closing { context.shareText("${track.artist} — ${track.title}\n${track.shareUrl}") })
-            when (export) {
-                is ExportStatus.Queued, is ExportStatus.Running ->
-                    MenuAction("Отменить сохранение MP3", Icons.Rounded.Close, closing { actions.cancelExport(track) })
-                is ExportStatus.Saved ->
-                    MenuAction("Удалить сохранённый файл", Icons.Rounded.AudioFile, closing { actions.deleteSavedFile(track) })
-                else ->
-                    MenuAction("Сохранить в MP3", Icons.Rounded.SaveAlt, closing { actions.exportMp3(listOf(track)) })
+            if (export is ExportStatus.Queued || export is ExportStatus.Running) {
+                MenuAction("Отменить сохранение MP3", Icons.Rounded.Close, closing { actions.cancelExport(track) })
+            } else {
+                MenuAction("Сохранить в MP3", Icons.Rounded.SaveAlt, closing { actions.exportMp3(listOf(track)) })
             }
             if (status == null || status == DownloadStatus.Failed) {
                 MenuAction("Скачать аудиозапись", Icons.Rounded.Download, closing { actions.download(listOf(track)) })

@@ -12,7 +12,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
-import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
@@ -25,11 +25,9 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.vkmusic.MainActivity
 import com.vkmusic.R
-import com.vkmusic.data.export.SavedAudioStore
 import com.vkmusic.data.repository.SettingsRepository
 import com.vkmusic.data.repository.TrackUrlResolver
 import com.vkmusic.di.ApplicationScope
-import com.vkmusic.di.PlayerDataSource
 import com.vkmusic.player.audio.AudioEffects
 import com.vkmusic.player.audio.EqualizerAudioProcessor
 import com.vkmusic.player.audio.LoudnessNormalizerAudioProcessor
@@ -60,12 +58,11 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class PlaybackService : MediaSessionService() {
 
-    @Inject @field:PlayerDataSource lateinit var dataSourceFactory: DataSource.Factory
+    @Inject lateinit var cacheDataSourceFactory: CacheDataSource.Factory
     @Inject lateinit var audioEffects: AudioEffects
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var queueExtender: QueueExtender
     @Inject lateinit var queueStore: QueueStore
-    @Inject lateinit var savedAudioStore: SavedAudioStore
     @Inject @field:ApplicationScope lateinit var appScope: CoroutineScope
     @Inject lateinit var trackUrlResolver: TrackUrlResolver
 
@@ -94,7 +91,7 @@ class PlaybackService : MediaSessionService() {
             DefaultMediaNotificationProvider.Builder(this).build().apply { setSmallIcon(R.drawable.ic_notification) },
         )
         val player = ExoPlayer.Builder(this, EffectsRenderersFactory(this, audioEffects))
-            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -241,7 +238,7 @@ class PlaybackService : MediaSessionService() {
                         item.mediaId == track.id && item.needsUrl
                     } ?: continue
                     val failedHere = position == player.currentMediaItemIndex && player.playerError != null
-                    replaceItem(player, position, track.toMediaItem(savedAudioStore.uriFor(track.id)))
+                    replaceItem(player, position, track.toMediaItem())
                     if (failedHere) player.prepare()
                 }
             } finally {
@@ -300,11 +297,10 @@ class PlaybackService : MediaSessionService() {
         extending = true
         scope.launch {
             val known = (0 until player.mediaItemCount).mapTo(HashSet()) { player.getMediaItemAt(it).mediaId }
-            // Сохранённый файлом трек играбельен и без ссылки VK.
             val more = runCatching { source() }.getOrDefault(emptyList())
-                .filter { (it.isPlayable || savedAudioStore.uriFor(it.id) != null) && it.id !in known }
+                .filter { it.isPlayable && it.id !in known }
                 .distinctBy { it.id }
-            if (queueExtender.source === source && more.isNotEmpty()) player.addMediaItems(more.map { it.toMediaItem(savedAudioStore.uriFor(it.id)) })
+            if (queueExtender.source === source && more.isNotEmpty()) player.addMediaItems(more.map { it.toMediaItem() })
             extending = false
         }
     }

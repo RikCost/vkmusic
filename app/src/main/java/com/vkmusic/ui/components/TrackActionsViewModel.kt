@@ -28,7 +28,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.io.IOException
 import javax.inject.Inject
 
 /** Окно «Добавить в плейлист»: [choices] = null, пока VK не ответил; [pending] — плейлисты, ждущие ответа VK. */
@@ -52,11 +51,6 @@ class TrackActionsViewModel @Inject constructor(
     val exports: StateFlow<Map<String, ExportStatus>> = mp3ExportRepository.statuses
 
     fun cancelExport(track: Track) = mp3ExportRepository.cancel(track)
-
-    /** Удалить трек, сохранённый файлом: сам файл и запись о нём. */
-    fun deleteSavedFile(track: Track) = launchReporting("Файл удалён") {
-        if (!mp3ExportRepository.deleteFile(track)) throw IOException("Нет доступа к файлу — удалите его вручную в папке сохранения")
-    }
 
     /** Сохранить треки файлами в папку из настроек; [folder] — подпапка (название плейлиста). */
     fun exportMp3(tracks: List<Track>, folder: String? = null) {

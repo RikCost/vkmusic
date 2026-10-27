@@ -9,7 +9,6 @@ import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.vkmusic.data.db.AppDatabase
-import com.vkmusic.data.db.ExportedTrackDao
 import com.vkmusic.data.db.TrackDao
 import dagger.Module
 import dagger.Provides
@@ -25,10 +24,9 @@ object DataModule {
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
-        // «Моя музыка» — кэш, он перезагружается из VK. Реестр сохранённых файлов теряется нельзя:
-        // без него треки, лежащие файлом в папке, снова качаются из сети.
+        // В базе только кэш «моей музыки»: он перезагружается из VK, поэтому потеря не страшна.
         Room.databaseBuilder(context, AppDatabase::class.java, "vkmusic.db")
-            .addMigrations(MIGRATION_3_4)
+            .addMigrations(MIGRATION_3_5, MIGRATION_4_5)
             .fallbackToDestructiveMigration(dropAllTables = true)
             .build()
 
@@ -36,20 +34,18 @@ object DataModule {
     fun provideTrackDao(db: AppDatabase): TrackDao = db.trackDao()
 
     @Provides
-    fun provideExportedTrackDao(db: AppDatabase): ExportedTrackDao = db.exportedTrackDao()
-
-    @Provides
     @Singleton
     fun provideDataStore(@ApplicationContext context: Context): DataStore<Preferences> =
         PreferenceDataStoreFactory.create { context.preferencesDataStoreFile("settings") }
 
-    private val MIGRATION_3_4 = object : Migration(3, 4) {
+    // Реестр сохранённых файлов (exported_tracks) убран: схема v5 снова равна схеме v3.
+    private val MIGRATION_3_5 = object : Migration(3, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) = Unit
+    }
+
+    private val MIGRATION_4_5 = object : Migration(4, 5) {
         override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL(
-                "CREATE TABLE IF NOT EXISTS exported_tracks " +
-                    "(id TEXT NOT NULL PRIMARY KEY, uri TEXT NOT NULL, location TEXT NOT NULL, " +
-                    "mimeType TEXT NOT NULL, sizeBytes INTEGER NOT NULL, savedAtMs INTEGER NOT NULL)",
-            )
+            db.execSQL("DROP TABLE IF EXISTS exported_tracks")
         }
     }
 }
