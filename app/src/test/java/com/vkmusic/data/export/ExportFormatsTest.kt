@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayOutputStream
 
 class ExportFormatsTest {
 
@@ -50,7 +51,8 @@ class ExportFormatsTest {
         // Следующий сегмент: PES продолжается без нового заголовка.
         extractor.feed(packet(AUDIO_PID, start = false, ByteArray(184) { 'B'.code.toByte() }))
 
-        val (audio, codec) = extractor.result()
+        val codec = extractor.codec()
+        val audio = extractor.drain()
 
         assertEquals(AudioCodec.Mp3, codec)
         assertEquals(170 + 184, audio.size)
@@ -68,7 +70,7 @@ class ExportFormatsTest {
         val garbage = byteArrayOf(1, 2, 0x47, (AUDIO_PID shr 8).toByte(), (AUDIO_PID and 0xFF).toByte(), 0x11, 'X'.code.toByte(), 9, 9)
         extractor.feed(garbage + pat() + pmt(streamType = 0x03) + first + second + second)
 
-        val audio = extractor.result().first
+        val audio = extractor.drain()
 
         assertEquals(175 + 184, audio.size)
         assertTrue(audio.none { it == 'X'.code.toByte() })
@@ -79,7 +81,7 @@ class ExportFormatsTest {
         val extractor = TsAudioExtractor()
         val pesHeader = byteArrayOf(0, 0, 1, 0xC0.toByte(), 0, 0, 0x80.toByte(), 0, 0)
         extractor.feed(pat() + pmt(streamType = 0x0F) + packet(AUDIO_PID, start = true, pesHeader + ByteArray(175)))
-        assertEquals(AudioCodec.Aac, extractor.result().second)
+        assertEquals(AudioCodec.Aac, extractor.codec())
     }
 
     @Test
@@ -99,8 +101,10 @@ class ExportFormatsTest {
         assertEquals("AC_DC - Back In Black_", ExportStorage.sanitize("AC/DC - Back In Black?"))
     }
 
-    private fun packet(pid: Int, start: Boolean, payload: ByteArray, continuity: Int = 0): ByteArray {
-        val header = byteArrayOf(0x47, ((if (start) 0x40 else 0) or (pid shr 8)).toByte(), (pid and 0xFF).toByte(), (0x10 or continuity).toByte())
+    // Как в производстве: накопленное сливается в приёмник одним куском.
+    private fun TsAudioExtractor.drain(): ByteArray = ByteArrayOutputStream().also { drainTo(it) }.toByteArray()
+
+    private fun packet(pid: Int, start: Boolean, payload: ByteArray, continuity: Int = 0): ByteArray {        val header = byteArrayOf(0x47, ((if (start) 0x40 else 0) or (pid shr 8)).toByte(), (pid and 0xFF).toByte(), (0x10 or continuity).toByte())
         return header + payload.copyOf(184).also { bytes -> for (i in payload.size until 184) bytes[i] = 0xFF.toByte() }
     }
 

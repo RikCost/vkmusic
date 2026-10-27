@@ -54,7 +54,23 @@ Meridius, но без FFmpeg). Теперь файл — и источник в�
 (`SettingsRepository.kt`): `cacheMaxBytes`, `exportTreeUri`. Литералы на русском прямо в Compose
 (в `res/values/strings.xml` всего 3 строки).
 
-## 2. Что проверять руками после правок
+## 2. Риски — что закрыто и что осталось
+
+Закрыто:
+- Сохранение трека больше не держит его в памяти: `ExportStorage.save` принимает приёмник, HLS
+  разбирается сегмент за сегментом прямо в файл (`TsAudioExtractor.drainTo`), прямой MP3
+  копируется потоком. По первому сегменту определяется кодек — имя и mime нужны до создания файла.
+- `app/proguard-rules.pro` был пустым при включённом `isMinifyEnabled` в release: добавлены
+  атрибуты и правила для сериализаторов `@Serializable` (трек едет в `inputData` WorkManager),
+  `AppDatabase_Impl` (Room ищет реализацию по имени) и `Mp3ExportWorker`.
+
+Осталось:
+- Release не подписан: в `build.gradle.kts` нет `signingConfig`, `assembleRelease` отдаёт unsigned APK.
+  Ключ в репозиторий не кладём — нужен либо `keystore.properties` вне git, либо подпись в CI-секретах.
+- Ни одна release-сборка не проверялась на устройстве: после настройки подписки прогнать вход,
+  воспроизведение и «Сохранить в MP3» на minify-сборке.
+
+## 3. Что проверять руками после правок
 
 1. Реальный вход: экран кода → «Код отправлен: почта» → письмо пришло → `checkOtp` → `access_token`.
    Если снова `invalid request` — снять `validation_type`, `response.info` и полный текст ошибки VK.

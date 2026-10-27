@@ -16,6 +16,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.OutputStream
 import java.nio.ByteBuffer
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
@@ -24,9 +25,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Сохранение трека файлом — порт meridius-core `hls.download()`: прямой .mp3 скачивается как есть
- * (`downloadMP3`), HLS собирается из сегментов с расшифровкой AES-128 (`downloadM3U8`). Вместо FFmpeg
- * аудио вынимается из MPEG-TS без перекодирования ([TsAudioExtractor]), теги — [Id3Writer].
+ * Сохранение трека файлом — порт meridius-core `hls.download()`: прямой .mp3 скачивается как есть,
+ * HLS собирается из сегментов с расшифровкой AES-128. Вместо FFmpeg аудио вынимается из MPEG-TS без
+ * перекодирования ([TsAudioExtractor]), теги — [Id3Writer]. Байты идут прямо в файл: трек не должен
+ * жить в памяти целиком, иначе длинная запись стоит десятков мегабайт на пике.
  */
 @Singleton
 class Mp3Exporter @Inject constructor(
@@ -37,34 +39,18 @@ class Mp3Exporter @Inject constructor(
     /** @return где лежит файл: адрес для воспроизведения и понятное человеку место. */
     suspend fun export(track: Track, subfolder: String?, onProgress: suspend (Int) -> Unit): SavedFile {
         val url = freshUrl(track) ?: throw IOException("VK не отдал ссылку на трек")
-        val (audio, codec) = if (url.substringBefore('?').endsWith(".m3u8")) {
-            downloadHls(url, onProgress)
-        } else {
-            downloadBytes(url, onProgress) to AudioCodec.Mp3
-        }
-        if (audio.isEmpty()) throw IOException("Пустой аудиопоток")
-        val data = if (codec == AudioCodec.Mp3) {
-            val cover = track.coverUrl?.let { runCatching { downloadBytes(it) {} }.getOrNull() }
-            Id3Writer.tag(track.title, track.artist, track.albumTitle, cover) + audio
-        } else {
-            audio
-        }
-        val name = ExportStorage.sanitize("${track.artist} - ${track.title}").ifBlank { track.id } + "." + codec.extension
-        return storage.save(subfolder, name, codec.mimeType, data)
+        return if (url.substringBefore('?').endsWith(".m3u8")) exportHls(track, url, subfolder, onProgress) else exportDirect(track, url, subfolder, onProgress)
     }
 
-    // Ссылки VK протухают, а у веб-треков в списках их нет вовсе — берём свежую перед скачиванием.
-    // reload_audios на частые запросы отвечает пусто (Meridius повторяет его на no_audios) — повторяем с паузой.
-    private suspend fun freshUrl(track: Track): String? {
-        val candidate = if (track.webHashes != null || track.accessKey != null) track.copy(url = null) else track
-        RESOLVE_DELAYS_MS.forEach { pause ->
-            delay(pause)
-            trackUrlResolver.resolve(listOf(candidate)).first().url?.let { return it }
+    private suspend fun exportDirect(track: Track, url: String, subfolder: String?, onProgress: suspend (Int) -> Unit): SavedFile {
+        val tag = id3Tag(track, AudioCodec.Mp3)
+        return storage.save(subfolder, fileName(track, AudioCodec.Mp3), AudioCodec.Mp3.mimeType) { out ->
+            out.write(tag)
+            if (downloadTo(url, out, onProgress) == 0L) throw IOException("Пустой аудиопоток")
         }
-        return track.url
     }
 
-    private suspend fun downloadHls(playlistUrl: String, onProgress: suspend (Int) -> Unit): Pair<ByteArray, AudioCodec> {
+    private suspend fun exportHls(track: Track, playlistUrl: String, subfolder: String?, onProgress: suspend (Int) -> Unit): SavedFile {
         var url = playlistUrl
         var text = downloadText(url)
         // Мастер-плейлист: берём первый вариант потока.
@@ -81,21 +67,63 @@ class Mp3Exporter @Inject constructor(
         segments.mapNotNull { it.key?.uri }.distinct().forEach { keys[it] = downloadBytes(it) {} }
 
         val extractor = TsAudioExtractor()
+        // Первый сегмент разбирается в буфер: по нему становится ясен кодек, а имя и mime файла нужны
+        // до его создания. Дальше кадры пишутся прямо в файл.
+        extractor.feed(decrypt(downloadBytes(segments.first().url) {}, segments.first(), keys))
+        val codec = extractor.codec()
+        val tag = id3Tag(track, codec)
+        return storage.save(subfolder, fileName(track, codec), codec.mimeType) { out ->
+            out.write(tag)
+            extractor.drainTo(out)
+            streamSegments(segments.drop(1), keys, extractor, segments.size, onProgress)
+            if (extractor.emittedBytes == 0L) throw IOException("Пустой аудиопоток")
+        }
+    }
+
+    /** Сегменты качаются параллельно (как concurrency в Meridius), но в TS-разбор идут по порядку. */
+    private suspend fun streamSegments(
+        remaining: List<HlsSegment>,
+        keys: Map<String, ByteArray>,
+        extractor: TsAudioExtractor,
+        total: Int,
+        onProgress: suspend (Int) -> Unit,
+    ) {
+        var done = total - remaining.size
         val limit = Semaphore(SEGMENT_CONCURRENCY)
-        var done = 0
-        // Сегменты качаются параллельно (как concurrency в Meridius), но в TS-разбор идут по порядку.
         coroutineScope {
-            segments.chunked(SEGMENT_BATCH).forEach { batch ->
+            remaining.chunked(SEGMENT_BATCH).forEach { batch ->
                 val bodies = batch.map { segment ->
                     async { limit.withPermit { decrypt(downloadBytes(segment.url) {}, segment, keys) } }
                 }.awaitAll()
                 bodies.forEach(extractor::feed)
                 done += batch.size
-                onProgress(done * 100 / segments.size)
+                onProgress(done * 100 / total)
             }
         }
-        return extractor.result()
+        onProgress(100)
     }
+
+    // Ссылки VK протухают, а у веб-треков в списках их нет вовсе — берём свежую перед скачиванием.
+    // reload_audios на частые запросы отвечает пусто (Meridius повторяет его на no_audios) — повторяем с паузой.
+    private suspend fun freshUrl(track: Track): String? {
+        val candidate = if (track.webHashes != null || track.accessKey != null) track.copy(url = null) else track
+        RESOLVE_DELAYS_MS.forEach { pause ->
+            delay(pause)
+            trackUrlResolver.resolve(listOf(candidate)).first().url?.let { return it }
+        }
+        return track.url
+    }
+
+    // ID3v2 читается только плеерами MP3; ADTS-поток AAC с приклеенным тегом перестал бы декодироваться.
+    private suspend fun id3Tag(track: Track, codec: AudioCodec): ByteArray =
+        if (codec == AudioCodec.Mp3) {
+            Id3Writer.tag(track.title, track.artist, track.albumTitle, track.coverUrl?.let { runCatching { downloadBytes(it) {} }.getOrNull() })
+        } else {
+            ByteArray(0)
+        }
+
+    private fun fileName(track: Track, codec: AudioCodec): String =
+        ExportStorage.sanitize("${track.artist} - ${track.title}").ifBlank { track.id } + "." + codec.extension
 
     /**
      * IV по спецификации HLS — атрибут IV или номер сегмента. Если результат не похож на MPEG-TS,
@@ -120,16 +148,23 @@ class Mp3Exporter @Inject constructor(
 
     private suspend fun downloadText(url: String): String = downloadBytes(url) {}.decodeToString()
 
-    private suspend fun downloadBytes(url: String, onProgress: suspend (Int) -> Unit): ByteArray = withContext(Dispatchers.IO) {
+    /** Небольшие тела (плейлист, ключ, обложка) — целиком; звук идёт в [downloadTo]. */
+    private suspend fun downloadBytes(url: String, onProgress: suspend (Int) -> Unit): ByteArray =
+        ByteArrayOutputStream().use { out ->
+            downloadTo(url, out, onProgress)
+            out.toByteArray()
+        }
+
+    /** @return сколько байт скопировано. */
+    private suspend fun downloadTo(url: String, out: OutputStream, onProgress: suspend (Int) -> Unit): Long = withContext(Dispatchers.IO) {
         okHttpClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
             if (!response.isSuccessful) throw HttpStatusException(response.code)
             val body = response.body
             val total = body.contentLength()
-            val out = ByteArrayOutputStream(if (total > 0) total.toInt() else DEFAULT_BUFFER)
+            var read = 0L
+            var lastPercent = -1
             body.byteStream().use { input ->
                 val buffer = ByteArray(DEFAULT_BUFFER)
-                var read = 0L
-                var lastPercent = -1
                 while (true) {
                     // Отмена задачи (WorkManager, кнопка «Отменить») не ждёт конца скачивания.
                     ensureActive()
@@ -146,7 +181,7 @@ class Mp3Exporter @Inject constructor(
                     }
                 }
             }
-            out.toByteArray()
+            read
         }
     }
 

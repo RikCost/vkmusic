@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
+import java.io.OutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,21 +26,25 @@ data class SavedFile(val uri: String, val location: String, val mimeType: String
  * Куда пишутся сохранённые треки. Папка из настроек — дерево SAF (ACTION_OPEN_DOCUMENT_TREE);
  * без неё — «Музыка/MuVK» через MediaStore (Android 10+, разрешения не нужны), на Android 8–9 —
  * папка приложения Android/data/…/Music/MuVK.
+ *
+ * Пишется потоком: [write] получает выходной поток и сам решает, что в него класть — так трек
+ * не живёт в памяти целиком (длинная запись могла стоить десятков мегабайт на пике).
  */
 @Singleton
 class ExportStorage @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val settingsRepository: SettingsRepository,
 ) {
-    suspend fun save(subfolder: String?, fileName: String, mimeType: String, data: ByteArray): SavedFile = withContext(Dispatchers.IO) {
-        val tree = settingsRepository.settings.first().exportTreeUri
-        val folder = subfolder?.let(::sanitize)?.takeIf { it.isNotBlank() }
-        when {
-            tree != null -> saveToTree(tree.toUri(), folder, fileName, mimeType, data)
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> saveToMediaStore(folder, fileName, mimeType, data)
-            else -> saveToAppFolder(folder, fileName, mimeType, data)
+    suspend fun save(subfolder: String?, fileName: String, mimeType: String, write: suspend (OutputStream) -> Unit): SavedFile =
+        withContext(Dispatchers.IO) {
+            val tree = settingsRepository.settings.first().exportTreeUri
+            val folder = subfolder?.let(::sanitize)?.takeIf { it.isNotBlank() }
+            when {
+                tree != null -> saveToTree(tree.toUri(), folder, fileName, mimeType, write)
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> saveToMediaStore(folder, fileName, mimeType, write)
+                else -> saveToAppFolder(folder, fileName, mimeType, write)
+            }
         }
-    }
 
     /** Удалить файл, который приложение сохранило ранее. @return false, если провайдер его не принял. */
     suspend fun delete(uri: String): Boolean = withContext(Dispatchers.IO) {
@@ -71,13 +76,13 @@ class ExportStorage @Inject constructor(
     }
 
     // Доступ к папке могли отозвать в любой момент — на любом шаге это одна понятная ошибка.
-    private fun saveToTree(tree: Uri, folder: String?, fileName: String, mimeType: String, data: ByteArray): SavedFile = try {
-        writeToTree(tree, folder, fileName, mimeType, data)
+    private suspend fun saveToTree(tree: Uri, folder: String?, fileName: String, mimeType: String, write: suspend (OutputStream) -> Unit): SavedFile = try {
+        writeToTree(tree, folder, fileName, mimeType, write)
     } catch (e: SecurityException) {
         throw IOException("Нет доступа к папке сохранения — выберите её заново в настройках", e)
     }
 
-    private fun writeToTree(tree: Uri, folder: String?, fileName: String, mimeType: String, data: ByteArray): SavedFile {
+    private suspend fun writeToTree(tree: Uri, folder: String?, fileName: String, mimeType: String, write: suspend (OutputStream) -> Unit): SavedFile {
         val resolver = context.contentResolver
         val rootId = DocumentsContract.getTreeDocumentId(tree)
         var parent = DocumentsContract.buildDocumentUriUsingTree(tree, rootId)
@@ -90,8 +95,9 @@ class ExportStorage @Inject constructor(
         val file = DocumentsContract.createDocument(resolver, parent, mimeType, fileName)
             ?: throw IOException("Не удалось создать файл «$fileName»")
         // Недописанный файл не оставляем в папке пользователя.
-        try {
-            resolver.openOutputStream(file)?.use { it.write(data) } ?: throw IOException("Не удалось записать «$fileName»")
+        val size = try {
+            resolver.openOutputStream(file)?.use { it.writeTracked(write) }
+                ?: throw IOException("Не удалось записать «$fileName»")
         } catch (e: Exception) {
             runCatching { DocumentsContract.deleteDocument(resolver, file) }
             throw e
@@ -100,7 +106,7 @@ class ExportStorage @Inject constructor(
             uri = file.toString(),
             location = listOfNotNull(displayName(tree.toString()), folder, fileName).joinToString("/"),
             mimeType = mimeType,
-            sizeBytes = data.size.toLong(),
+            sizeBytes = size,
         )
     }
 
@@ -122,7 +128,7 @@ class ExportStorage @Inject constructor(
     }
 
     @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
-    private fun saveToMediaStore(folder: String?, fileName: String, mimeType: String, data: ByteArray): SavedFile {
+    private suspend fun saveToMediaStore(folder: String?, fileName: String, mimeType: String, write: suspend (OutputStream) -> Unit): SavedFile {
         val resolver = context.contentResolver
         val relativePath = listOfNotNull(Environment.DIRECTORY_MUSIC, DEFAULT_FOLDER, folder).joinToString("/") + "/"
         val values = ContentValues().apply {
@@ -133,24 +139,58 @@ class ExportStorage @Inject constructor(
         }
         val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         val item = resolver.insert(collection, values) ?: throw IOException("Не удалось создать файл «$fileName»")
-        try {
-            resolver.openOutputStream(item)?.use { it.write(data) } ?: throw IOException("Не удалось записать «$fileName»")
+        val size = try {
+            val bytes = resolver.openOutputStream(item)?.use { it.writeTracked(write) }
+                ?: throw IOException("Не удалось записать «$fileName»")
             resolver.update(item, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+            bytes
         } catch (e: Exception) {
             resolver.delete(item, null, null)
             throw e
         }
-        return SavedFile(item.toString(), relativePath + fileName, mimeType, data.size.toLong())
+        return SavedFile(item.toString(), relativePath + fileName, mimeType, size)
     }
 
-    private fun saveToAppFolder(folder: String?, fileName: String, mimeType: String, data: ByteArray): SavedFile {
+    private suspend fun saveToAppFolder(folder: String?, fileName: String, mimeType: String, write: suspend (OutputStream) -> Unit): SavedFile {
         val root = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: throw IOException("Хранилище недоступно")
         val dir = File(root, listOfNotNull(DEFAULT_FOLDER, folder).joinToString("/")).apply { mkdirs() }
         var target = File(dir, fileName)
         var index = 1
         while (target.exists()) target = File(dir, "${fileName.substringBeforeLast('.')} (${index++}).${fileName.substringAfterLast('.')}")
-        target.writeBytes(data)
-        return SavedFile(Uri.fromFile(target).toString(), target.absolutePath, mimeType, data.size.toLong())
+        val size = try {
+            target.outputStream().use { it.writeTracked(write) }
+        } catch (e: Exception) {
+            runCatching { target.delete() }
+            throw e
+        }
+        return SavedFile(Uri.fromFile(target).toString(), target.absolutePath, mimeType, size)
+    }
+
+    /** Записать через [write] в обёртку со счётчиком и вернуть объём прошедших байт. */
+    private suspend fun OutputStream.writeTracked(write: suspend (OutputStream) -> Unit): Long {
+        val counted = CountingOutputStream(this)
+        write(counted)
+        return counted.bytes
+    }
+
+    /** Считает записанное: размер попадает в реестр без перечитывания файла. */
+    private class CountingOutputStream(private val delegate: OutputStream) : OutputStream() {
+        var bytes: Long = 0L
+            private set
+
+        override fun write(b: Int) {
+            delegate.write(b)
+            bytes++
+        }
+
+        override fun write(b: ByteArray, off: Int, len: Int) {
+            delegate.write(b, off, len)
+            bytes += len
+        }
+
+        override fun flush() = delegate.flush()
+
+        override fun close() = delegate.close()
     }
 
     companion object {

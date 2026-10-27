@@ -1,6 +1,7 @@
 package com.vkmusic.data.export
 
 import java.io.ByteArrayOutputStream
+import java.io.OutputStream
 
 enum class AudioCodec(val extension: String, val mimeType: String) {
     Mp3("mp3", "audio/mpeg"),
@@ -13,9 +14,14 @@ enum class AudioCodec(val extension: String, val mimeType: String) {
  * склеивается в обычный .mp3, AAC — в ADTS-поток .aac.
  *
  * Состояние (PID-ы из PAT/PMT, незавершённый PES) переживает границы сегментов.
+ *
+ * Пока [drainTo] не вызван, кадры копятся в буфере — так по первому сегменту успевает стать ясен
+ * [codec], а имя и mime файла нужно знать до его создания. Дальше каждый байт идёт прямо в приёмник,
+ * поэтому в памяти не живёт копия всего трека.
  */
 class TsAudioExtractor {
-    private val output = ByteArrayOutputStream()
+    private val buffer = ByteArrayOutputStream()
+    private var sink: OutputStream? = null
     private var pmtPid = -1
     private var audioPid = -1
     private var streamType = -1
@@ -26,7 +32,9 @@ class TsAudioExtractor {
     // continuity_counter последнего аудиопакета: повтор того же счётчика — дубликат пакета (ISO 13818-1).
     private var lastContinuity = -1
 
-    val bytesWritten: Int get() = output.size()
+    /** Сколько аудио реально извлеклось: 0 после всех сегментов значит, что аудиопоток пуст. */
+    var emittedBytes: Long = 0L
+        private set
 
     fun feed(data: ByteArray) {
         // Сегменты HLS — отдельные TS-файлы: счётчик в новом может совпасть с последним прошлого.
@@ -45,14 +53,24 @@ class TsAudioExtractor {
         }
     }
 
-    fun result(): Pair<ByteArray, AudioCodec> {
-        val bytes = output.toByteArray()
-        val codec = when (streamType) {
-            STREAM_MPEG1_AUDIO, STREAM_MPEG2_AUDIO -> AudioCodec.Mp3
-            STREAM_AAC_ADTS -> AudioCodec.Aac
-            else -> detectCodec(bytes)
-        }
-        return bytes to codec
+    /** stream_type из PMT, а если секции программы не было — по первым байтам аудиопотока. */
+    fun codec(): AudioCodec = when (streamType) {
+        STREAM_MPEG1_AUDIO, STREAM_MPEG2_AUDIO -> AudioCodec.Mp3
+        STREAM_AAC_ADTS -> AudioCodec.Aac
+        else -> detectCodec(buffer.toByteArray())
+    }
+
+    /** Всё накопленное — в приёмник; следующие сегменты пишутся в него же без копий по пути. */
+    fun drainTo(sink: OutputStream) {
+        buffer.writeTo(sink)
+        buffer.reset()
+        this.sink = sink
+    }
+
+    private fun emit(data: ByteArray, offset: Int, length: Int) {
+        emittedBytes += length
+        val target = sink
+        if (target == null) buffer.write(data, offset, length) else target.write(data, offset, length)
     }
 
     private fun packet(data: ByteArray, start: Int) {
@@ -131,7 +149,7 @@ class TsAudioExtractor {
             pending.write(data, payload, end - payload)
             flushPesHeader()
         } else {
-            output.write(data, payload, end - payload)
+            emit(data, payload, end - payload)
         }
     }
 
@@ -145,7 +163,7 @@ class TsAudioExtractor {
         }
         val dataStart = 9 + (bytes[8].toInt() and 0xFF)
         if (bytes.size < dataStart) return
-        output.write(bytes, dataStart, bytes.size - dataStart)
+        emit(bytes, dataStart, bytes.size - dataStart)
         pesHeader = null
     }
 
