@@ -61,4 +61,15 @@ class SavedAudioStore @Inject constructor(
         dao.delete(trackId)
         return true
     }
+
+    /**
+     * Очистить всё сохранённое: файлы удаляются из папки, записи снимаются все — треки в музыке
+     * при этом не трогаются, они лишь снова играют из VK.
+     * @return сколько файлов провайдер не отдал (записи о них всё равно снимаются).
+     */
+    suspend fun removeAll(): Int {
+        val stuck = dao.all().count { entity -> storage.exists(entity.uri) && !storage.delete(entity.uri) }
+        dao.deleteAll()
+        return stuck
+    }
 }

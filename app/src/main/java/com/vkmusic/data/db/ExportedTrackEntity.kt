@@ -34,4 +34,7 @@ interface ExportedTrackDao {
 
     @Query("DELETE FROM exported_tracks WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("DELETE FROM exported_tracks")
+    suspend fun deleteAll()
 }
