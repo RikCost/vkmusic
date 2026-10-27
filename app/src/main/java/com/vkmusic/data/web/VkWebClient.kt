@@ -7,6 +7,8 @@ import com.vkmusic.data.HttpStatusException
 import com.vkmusic.data.api.vk.VkHeadersInterceptor
 import com.vkmusic.data.api.vk.await
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -105,12 +107,31 @@ class VkWebClient(
     @Volatile
     var onSessionLost: (() -> Unit)? = null
 
+    @Volatile
+    private var warmedUp = false
+    private val warmUpMutex = Mutex()
+
+    /**
+     * Как `login()` в meridius-core: открыть главную vk.ru по cookie, чтобы VK досоздал веб-сессию.
+     * Cookie авторизации достаточно для `web_token`, но `al_audio.php` без этого шага после
+     * холодного старта отвечает без плейлиста — ровно то чинит «Диагностика веб-VK», которая
+     * начинает с того же запроса. Раз за процесс; при сбое флаг не ставится, следующий запрос
+     * прогреется заново.
+     */
+    suspend fun warmUpSession(force: Boolean = false) = warmUpMutex.withLock {
+        if (warmedUp && !force) return@withLock
+        val page = runCatching { get(VkWebConfig.BASE_URL) }.getOrNull() ?: return@withLock
+        warmedUp = true
+        if (page.contains(LOGIN_PAGE_MARKER) || page.contains(LOGIN_FORM_MARKER)) onSessionLost?.invoke()
+    }
+
     /**
      * Запрос к al_audio.php (meridius-core `requestEndpoint`): ответ `{"payload":[code, [...]]}`.
      * [requireOk] — для действий (добавить, удалить, сохранить): ненулевой code значит, что VK отказал,
      * и это ошибка, а не «успех», как раньше (MeridiusNova проверяет так же: `payload[0] !== 0`).
      */
     suspend fun alAudio(params: Map<String, Any?>, requireOk: Boolean = false): JsonArray {
+        warmUpSession()
         val text = postForm(VkWebConfig.AL_AUDIO_URL, params + ("al" to 1))
         val root = parseJson(text) as? JsonObject ?: throw notJson(text)
         val payload = root["payload"] as? JsonArray ?: throw notJson(text)
@@ -137,7 +158,10 @@ class VkWebClient(
         return runCatching { json.parseToJsonElement(trimmed) }.getOrNull()
     }
 
-    fun clearSession() = cookieJar.clear()
+    fun clearSession() {
+        warmedUp = false
+        cookieJar.clear()
+    }
 
     /** Имена cookie для адреса — без значений, для диагностики. */
     fun cookieNames(url: String): List<String> = cookieJar.loadForRequest(url.toHttpUrl()).map { it.name }.sorted()

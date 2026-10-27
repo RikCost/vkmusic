@@ -70,10 +70,22 @@ class VkWebAudioRepository(
         val me = userIdProvider()
         val all = runCatching { loadOwnerAudios(ownerId) }.getOrNull()
         if (!all.isNullOrEmpty()) return Cursor(all.toMutableList(), more = null)
-        val page = section("all", ownerId)
-        val body = page.getOrNull(1) as? JsonObject
-        val list = (body?.get("playlist") as? JsonObject)?.get("list") ?: throw unexpected("музыку")
+        var page = catalogBody(section("all", ownerId))
+        if (page == null) {
+            // Веб-сессия могла не дозреть: повторяем после нового прогрева главной, прежде чем
+            // жаловаться, — ровно тем чинит ситуацию «Диагностика веб-VK».
+            web.warmUpSession(force = true)
+            page = catalogBody(section("all", ownerId))
+        }
+        val (body, list) = page ?: throw unexpected("музыку")
         return Cursor(WebAudioParser.tracks(list, me).toMutableList(), WebAudioParser.more(body))
+    }
+
+    // Ответ section(): [service-side-блок, {playlist: {list…}, more…}]; нет плейлиста — это отказ, а не пустой список.
+    private fun catalogBody(page: JsonArray): Pair<JsonObject, JsonElement>? {
+        val body = page.getOrNull(1) as? JsonObject ?: return null
+        val list = (body["playlist"] as? JsonObject)?.get("list") ?: return null
+        return body to list
     }
 
     // Если VK отдал меньше, чем в счётчике плейлиста, догружаем тем же load_section со смещением.

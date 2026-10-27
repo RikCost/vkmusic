@@ -78,12 +78,9 @@ class WebSessionManager @Inject constructor(
     suspend fun completeLogin(): VkSession {
         val session = obtain()
         // meridius-core login(): главная vk.ru по cookie — VK досоздаёт веб-сессию; результат не блокирует вход.
-        runCatching { isWebSessionAlive() }
+        runCatching { web.warmUpSession(force = true) }
         return session
     }
-
-    /** Как `login()` в Meridius: на главной vk.ru нет формы входа — веб-сессия жива. */
-    suspend fun isWebSessionAlive(): Boolean = !web.get(VkWebConfig.BASE_URL).contains(LOGIN_PAGE_MARKER)
 
     suspend fun signOut() {
         web.clearSession()
@@ -98,8 +95,6 @@ class WebSessionManager @Inject constructor(
     }
 
     private companion object {
-        // regex ACTION_LOGIN из meridius-core: признак страницы входа VK ID.
-        const val LOGIN_PAGE_MARKER = "Index.initRedesignedVkId"
         const val REFRESH_BACKOFF_MS = 30_000L
     }
 }
