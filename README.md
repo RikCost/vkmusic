@@ -5,7 +5,7 @@
 десктопного плеера [Meridius](https://github.com/PurpleHorrorRus/Meridius) — как именно, описано в
 [docs/meridius-port.md](docs/meridius-port.md).
 
-- Package: `com.vkmusic`, версия 0.4.3
+- Package: `com.vkmusic`, версия 0.4.4
 - Минимум Android 8.0 (`minSdk 26`), собран против SDK 36 (`targetSdk 36`)
 - UI полностью на русском, строки захардкожены в Compose
 
@@ -59,6 +59,9 @@ cp local.properties.sample local.properties
 ```
 
 Gradle-кэш и SDK можно переопределить переменными `GRADLE_USER_HOME`, `ANDROID_HOME`, `JAVA_HOME`.
+
+Подпись релиза берётся из `keystore.properties` в корне проекта (`cp keystore.properties.sample keystore.properties`):
+сам файл и `*.jks` в `.gitignore`, без них `assembleRelease` собирает неподписанный APK, а debug работает как обычно.
 
 ## Структура
 

@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -8,8 +10,15 @@ plugins {
 
 val versionMajor = 0
 val versionMinor = 4
-val versionPatch = 3
+val versionPatch = 4
 val appVersionName = "$versionMajor.$versionMinor.$versionPatch"
+
+// Ключ релиза лежит вне репозитория: keystore.properties не коммитится, а без него
+// release собирается неподписанным — debug и проверки в CI от этого не ломаются.
+val keystoreProperties = Properties()
+val keystoreFile = rootProject.file("keystore.properties")
+if (keystoreFile.exists()) keystoreFile.inputStream().use { keystoreProperties.load(it) }
+val hasReleaseSigning = keystoreProperties.isNotEmpty()
 
 android {
     namespace = "com.vkmusic"
@@ -24,6 +33,17 @@ android {
 
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             versionNameSuffix = "-debug"
@@ -32,6 +52,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
         }
     }
 
