@@ -14,21 +14,22 @@
 
 ## 1. Раздельное хранение: кэш vs MP3 + путь в настройках
 
-Сейчас «кэш» и «офлайн» — одно и то же: `SimpleCache(filesDir/downloads)` с `NoOpCacheEvictor`
-([MediaModule.kt:45-48](../app/src/main/java/com/vkmusic/di/MediaModule.kt#L45-L48)), а плеер в кэш
-не пишет вовсе (`setCacheWriteDataSinkFactory(null)`,
-[MediaModule.kt:57-64](../app/src/main/java/com/vkmusic/di/MediaModule.kt#L57-L64)). Реального `.mp3`
-на трек нет: данные лежат чанками под ключом `track.id`.
+Было: «кэш» и «офлайн» — одно и то же, `SimpleCache(filesDir/downloads)` с `NoOpCacheEvictor`, а плеер
+в кэш не писал вовсе (`setCacheWriteDataSinkFactory(null)`). Реального `.mp3` на трек нет: данные лежат
+чанками под ключом `track.id`. Пункт 2.1 закрыт, 2.2 — частично (файл есть, но не источник воспроизведения).
 
-### 2.1 Кэш (исчезающий)
-- `SimpleCache(File(context.cacheDir, "music_cache"), LruCacheEvictor(<лимит из настроек>), databaseProvider)`.
-  `LruCacheEvictor.maxCacheBytes` меняется на лету — лимит применять из `SettingsRepository`.
-- Плееру запись включить (`setCacheWriteDataSinkFactory` вернуть), `setIsCacheLocked(false)` —
-  просмотренные треки кэшируются и вытесняются по LRU.
-- Офлайн-загрузки писать в тот же кэш с `setIsCacheLocked(true)`: залоченный контент `LruCacheEvictor`
-  не вытесняет, офлайн остаётся.
-- В настройках: размер кэша (`SimpleCache.getCacheBytes()` по подписке на `Listener`), кнопка «Очистить кэш»
-  (`cache.removeResources(keys)`), лимит в МБ.
+### 2.1 Кэш (исчезающий) — сделано
+
+Два кэша вместо одного залоченного: в Media3 1.11 нет ни `setIsCacheLocked`, ни изменяемого предела
+у `LeastRecentlyUsedCacheEvictor` (`LruCacheEvictor` переименован, `maxBytes` — `private final`).
+- `di/MediaModule.kt`: `@StreamingCache` — `SimpleCache(cacheDir/music_cache, TunableLruCacheEvictor)`,
+  плеер в него пишет; `@DownloadCache` — прежний `SimpleCache(filesDir/downloads, NoOpCacheEvictor)`,
+  офлайн вечный и под «Очистить кэш» не попадает.
+- Постоянный кэш — upstream потокового (`@OfflineUpstream`), поэтому загруженный офлайн трек играет
+  и в самолёте, и второй раз не качается.
+- `data/storage/TunableLruCacheEvictor` — LRU с лимитом, который меняется на лету (решение о вытеснении
+  по `Cache.getCacheSpace()`, порядок — по `lastTouchTimestamp`, как в Media3).
+- Настройки: `cacheMaxBytes` (128 МБ…2 ГБ), «Занято X из Y», «Очистить кэш» (`CacheRepository`).
 
 ### 2.2 MP3 (постоянный файл) — сделано
 

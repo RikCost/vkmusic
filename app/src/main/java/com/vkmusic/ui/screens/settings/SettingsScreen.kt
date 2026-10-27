@@ -62,11 +62,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.vkmusic.data.repository.AppSettings
+import com.vkmusic.data.repository.CacheRepository
 import com.vkmusic.data.repository.NormalizerSettings
 import com.vkmusic.data.repository.SettingsRepository
 import com.vkmusic.data.export.ExportStorage
 import com.vkmusic.data.repository.DownloadRepository
 import com.vkmusic.data.web.VkWebDiagnostics
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
 import com.vkmusic.player.audio.EqualizerPresets
 import com.vkmusic.ui.components.AppVersionText
 import com.vkmusic.ui.components.BackTopBar
@@ -94,12 +97,25 @@ class SettingsViewModel @Inject constructor(
     private val diagnostics: VkWebDiagnostics,
     private val exportStorage: ExportStorage,
     private val downloadRepository: DownloadRepository,
+    private val cacheRepository: CacheRepository,
 ) : ViewModel() {
 
     /** Сколько офлайн-загрузок и сколько места они занимают (включая недокачанные). */
     val downloadsSummary: StateFlow<Pair<Int, Long>> = downloadRepository.downloads
         .map { downloads -> downloads.size to downloads.values.sumOf { it.bytes } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0 to 0L)
+
+    // Объём кэша спрашивается только пока открыты настройки: Media3 считает его по списку файлов.
+    val cacheUsage: StateFlow<Long> = flow {
+        while (true) {
+            emit(cacheRepository.usageBytes())
+            delay(CACHE_USAGE_POLL_MS)
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
+
+    fun setCacheLimit(bytes: Long) = launch { repository.setCacheMaxBytes(bytes) }
+
+    fun clearCache() = launch { runCatching { cacheRepository.clear() } }
 
     fun removeAllDownloads() = downloadRepository.removeAll()
 
@@ -201,6 +217,9 @@ fun SettingsScreen(
                 )
             }
 
+            item { SectionTitle("Кэш прослушанного") }
+            item { CacheSection(current.cacheMaxBytes, viewModel) }
+
             item { SectionTitle("Загрузки") }
             item { DownloadsSection(viewModel) }
 
@@ -230,6 +249,60 @@ fun SettingsScreen(
         }
     }
 }
+
+@Composable
+private fun CacheSection(limitBytes: Long, viewModel: SettingsViewModel) {
+    val usage by viewModel.cacheUsage.collectAsStateWithLifecycle()
+    var showLimits by remember { mutableStateOf(false) }
+    var confirm by remember { mutableStateOf(false) }
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Занято ${formatBytes(usage)} из ${formatBytes(limitBytes)}", style = MaterialTheme.typography.bodyLarge)
+        Text(
+            "Прослушанные треки хранятся во временной папке и вытесняются по мере заполнения. " +
+                "Офлайн-загрузки и сохранённые в папку MP3 сюда не попадают.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box {
+                OutlinedButton(onClick = { showLimits = true }) {
+                    Text("Лимит: ${formatBytes(limitBytes)}")
+                    Icon(Icons.Rounded.ArrowDropDown, contentDescription = null)
+                }
+                DropdownMenu(expanded = showLimits, onDismissRequest = { showLimits = false }) {
+                    CACHE_LIMITS_MB.forEach { megabytes ->
+                        val bytes = cacheLimitBytes(megabytes)
+                        DropdownMenuItem(
+                            text = { Text(formatBytes(bytes)) },
+                            leadingIcon = { if (bytes == limitBytes) Icon(Icons.Rounded.Check, contentDescription = null) },
+                            onClick = {
+                                showLimits = false
+                                viewModel.setCacheLimit(bytes)
+                            },
+                        )
+                    }
+                }
+            }
+            OutlinedButton(onClick = { confirm = true }, enabled = usage > 0) { Text("Очистить кэш") }
+        }
+    }
+    if (confirm) {
+        ConfirmDialog(
+            title = "Очистить кэш?",
+            text = "Будет удалено ${formatBytes(usage)} временных копий треков. Загруженные офлайн и сохранённые в папку файлы останутся.",
+            confirm = "Очистить",
+            onConfirm = viewModel::clearCache,
+            onDismiss = { confirm = false },
+        )
+    }
+}
+
+private val CACHE_LIMITS_MB = listOf(128, 256, 512, 1024, 2048)
+
+private const val CACHE_USAGE_POLL_MS = 2_000L
+
+// 2048 МБ уже не помещается в Int, поэтому множители — длинные.
+private fun cacheLimitBytes(megabytes: Int): Long = megabytes * 1024L * 1024L
 
 @Composable
 private fun DownloadsSection(viewModel: SettingsViewModel) {

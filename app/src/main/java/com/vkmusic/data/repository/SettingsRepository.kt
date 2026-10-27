@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.vkmusic.player.audio.EqualizerPresets
 import kotlinx.coroutines.flow.Flow
@@ -41,9 +42,12 @@ data class AppSettings(
     val mixOptions: Map<String, List<String>> = emptyMap(),
     // Папка для MP3 — URI дерева SAF; null — «Музыка/MuVK» по умолчанию.
     val exportTreeUri: String? = null,
+    // Исчезающий кэш прослушанного: лимит LruCacheEvictor.
+    val cacheMaxBytes: Long = DEFAULT_CACHE_MAX_BYTES,
 ) {
     companion object {
         const val DEFAULT_THEME = "classic"
+        const val DEFAULT_CACHE_MAX_BYTES = 512L * 1024 * 1024
     }
 }
 
@@ -74,6 +78,7 @@ class SettingsRepository @Inject constructor(
             mixOptions = prefs[Keys.MIX_OPTIONS]?.let { runCatching { json.decodeFromString(mixSerializer, it) }.getOrNull() }
                 .orEmpty(),
             exportTreeUri = prefs[Keys.EXPORT_TREE],
+            cacheMaxBytes = prefs[Keys.CACHE_MAX_BYTES] ?: AppSettings.DEFAULT_CACHE_MAX_BYTES,
         )
     }.distinctUntilChanged()
 
@@ -108,6 +113,8 @@ class SettingsRepository @Inject constructor(
         if (value == null) it.remove(Keys.EXPORT_TREE) else it[Keys.EXPORT_TREE] = value
     }
 
+    suspend fun setCacheMaxBytes(value: Long) = dataStore.edit { it[Keys.CACHE_MAX_BYTES] = value }
+
     private fun parseLevels(raw: String): List<Float>? =
         raw.split(',').mapNotNull { it.toFloatOrNull() }.takeIf { it.size == EqualizerPresets.frequencies.size }
 
@@ -125,5 +132,6 @@ class SettingsRepository @Inject constructor(
         val SPEED = floatPreferencesKey("playback_speed")
         val MIX_OPTIONS = stringPreferencesKey("mix_options")
         val EXPORT_TREE = stringPreferencesKey("export_tree_uri")
+        val CACHE_MAX_BYTES = longPreferencesKey("cache_max_bytes")
     }
 }

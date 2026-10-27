@@ -16,6 +16,8 @@ import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.offline.DefaultDownloadIndex
 import androidx.media3.exoplayer.offline.DefaultDownloaderFactory
 import androidx.media3.exoplayer.offline.DownloadManager
+import com.vkmusic.data.repository.AppSettings
+import com.vkmusic.data.storage.TunableLruCacheEvictor
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -24,7 +26,23 @@ import dagger.hilt.components.SingletonComponent
 import okhttp3.OkHttpClient
 import java.io.File
 import java.util.concurrent.Executors
+import javax.inject.Qualifier
 import javax.inject.Singleton
+
+/** Исчезающий кэш прослушанного: системный кэш приложения, вытеснение по LRU. */
+@Qualifier
+@Retention(AnnotationRetention.RUNTIME)
+annotation class StreamingCache
+
+/** Постоянное хранилище офлайн-загрузок: файлы приложения, ничего не вытесняется. */
+@Qualifier
+@Retention(AnnotationRetention.RUNTIME)
+annotation class DownloadCache
+
+/** Загрузки как источник для плеера: трек из постоянного хранилища отдаётся без сети. */
+@Qualifier
+@Retention(AnnotationRetention.RUNTIME)
+annotation class OfflineUpstream
 
 @OptIn(UnstableApi::class)
 @Module
@@ -44,6 +62,20 @@ object MediaModule {
 
     @Provides
     @Singleton
+    fun provideStreamingCacheEvictor(): TunableLruCacheEvictor = TunableLruCacheEvictor(AppSettings.DEFAULT_CACHE_MAX_BYTES)
+
+    @Provides
+    @Singleton
+    @StreamingCache
+    fun provideStreamingCache(
+        @ApplicationContext context: Context,
+        databaseProvider: DatabaseProvider,
+        evictor: TunableLruCacheEvictor,
+    ): Cache = SimpleCache(File(context.cacheDir, "music_cache"), evictor, databaseProvider)
+
+    @Provides
+    @Singleton
+    @DownloadCache
     fun provideDownloadCache(@ApplicationContext context: Context, databaseProvider: DatabaseProvider): Cache =
         SimpleCache(File(context.filesDir, "downloads"), NoOpCacheEvictor(), databaseProvider)
 
@@ -54,21 +86,37 @@ object MediaModule {
         okHttpClient: OkHttpClient,
     ): DataSource.Factory = DefaultDataSource.Factory(context, OkHttpDataSource.Factory(okHttpClient))
 
+    // Офлайн-загрузки читаются из постоянного хранилища, но поток прослушивания туда не пишется:
+    // иначе кэш рос бы в filesDir бес вытеснения, а «Очистить кэш» не освобождал бы место.
     @Provides
     @Singleton
-    fun provideCacheDataSourceFactory(cache: Cache, upstream: DataSource.Factory): CacheDataSource.Factory =
+    @OfflineUpstream
+    fun provideOfflineUpstreamFactory(@DownloadCache cache: Cache, upstream: DataSource.Factory): DataSource.Factory =
         CacheDataSource.Factory()
             .setCache(cache)
             .setCacheKeyFactory(cacheKeyFactory)
             .setUpstreamDataSourceFactory(upstream)
             .setCacheWriteDataSinkFactory(null)
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+
+    // Плеер: пишет в исчезающий кэш, а при попадании в него отсутствующего контента идёт через загрузки.
+    @Provides
+    @Singleton
+    fun provideCacheDataSourceFactory(
+        @StreamingCache cache: Cache,
+        @OfflineUpstream offlineUpstream: DataSource.Factory,
+    ): CacheDataSource.Factory = CacheDataSource.Factory()
+        .setCache(cache)
+        .setCacheKeyFactory(cacheKeyFactory)
+        .setUpstreamDataSourceFactory(offlineUpstream)
+        .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
     @Provides
     @Singleton
     fun provideDownloadManager(
         @ApplicationContext context: Context,
         databaseProvider: DatabaseProvider,
-        cache: Cache,
+        @DownloadCache cache: Cache,
         upstream: DataSource.Factory,
     ): DownloadManager {
         val downloadDataSourceFactory = CacheDataSource.Factory()
