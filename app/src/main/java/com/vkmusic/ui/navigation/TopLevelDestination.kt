@@ -13,7 +13,7 @@ import kotlin.reflect.KClass
 enum class TopLevelDestination(val route: Any, val routeClass: KClass<*>, val label: String, val icon: ImageVector) {
     Home(HomeRoute, HomeRoute::class, "Главная", Icons.Rounded.Home),
     Music(MusicRoute, MusicRoute::class, "Музыка", Icons.Rounded.MusicNote),
-    Explore(ExploreRoute, ExploreRoute::class, "Обзор", Icons.Rounded.Tag),
+    Explore(ExploreRoute(), ExploreRoute::class, "Обзор", Icons.Rounded.Tag),
     Friends(FriendsRoute, FriendsRoute::class, "Друзья", Icons.Rounded.People),
     Communities(CommunitiesRoute, CommunitiesRoute::class, "Сообщества", Icons.Rounded.Groups),
 }

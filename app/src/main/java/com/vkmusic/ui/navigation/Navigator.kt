@@ -8,6 +8,9 @@ import com.vkmusic.data.model.Track
 interface Navigator {
     fun openSimilar(track: Track)
     fun openArtist(artistId: String, name: String)
+
+    /** Обзор с уже введённым запросом — например, поиск исполнителя из плеера. */
+    fun openSearch(query: String)
     fun openPlaylist(playlist: Playlist)
     fun openOwner(ownerId: Long, name: String)
     fun openPlayer()

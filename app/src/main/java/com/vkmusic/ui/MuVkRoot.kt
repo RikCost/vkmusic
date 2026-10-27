@@ -42,6 +42,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.toRoute
 import com.vkmusic.data.model.Playlist
 import com.vkmusic.data.model.Track
 import com.vkmusic.data.repository.AuthMode
@@ -143,7 +144,9 @@ fun MuVkRoot(viewModel: RootViewModel = hiltViewModel()) {
                     }
                     composable<HomeRoute> { HomeScreen(contentPadding = padding) }
                     composable<MusicRoute> { MusicScreen(contentPadding = padding) }
-                    composable<ExploreRoute> { ExploreScreen(contentPadding = padding) }
+                    composable<ExploreRoute> { entry ->
+                        ExploreScreen(contentPadding = padding, initialQuery = entry.toRoute<ExploreRoute>().query)
+                    }
                     composable<FriendsRoute> { FriendsScreen(contentPadding = padding) }
                     composable<CommunitiesRoute> { CommunitiesScreen(contentPadding = padding) }
                     composable<PlaylistRoute> { PlaylistScreen(contentPadding = padding) }
@@ -226,6 +229,9 @@ private class NavControllerNavigator(private val navController: NavHostControlle
     override fun openSimilar(track: Track) = navController.navigate(SimilarRoute(track.ownerId, track.audioId, track.title))
 
     override fun openArtist(artistId: String, name: String) = navController.navigate(ArtistRoute(artistId, name))
+
+    // Не как вкладка «Обзор»: записи с запросом различаются, а «назад» должен вернуть в плеер.
+    override fun openSearch(query: String) = navController.navigate(ExploreRoute(query)) { launchSingleTop = true }
 
     override fun openPlaylist(playlist: Playlist) =
         navController.navigate(PlaylistRoute(playlist.ownerId, playlist.playlistId, playlist.title, playlist.accessKey))

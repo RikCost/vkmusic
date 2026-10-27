@@ -11,8 +11,9 @@ data object HomeRoute
 @Serializable
 data object MusicRoute
 
+/** Обзор с поиском; [query] заполняется при переходе «найти исполнителя» из плеера. */
 @Serializable
-data object ExploreRoute
+data class ExploreRoute(val query: String? = null)
 
 @Serializable
 data object FriendsRoute

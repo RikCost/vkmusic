@@ -2,6 +2,11 @@
 
 package com.vkmusic.ui.screens.player
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.layout.width
 import androidx.media3.common.MediaMetadata
@@ -63,9 +68,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -84,6 +92,7 @@ import com.vkmusic.data.model.Track
 import com.vkmusic.data.repository.DownloadStatus
 import com.vkmusic.data.repository.SettingsRepository
 import com.vkmusic.player.queue.toTrack
+import com.vkmusic.ui.LocalSnackbarHostState
 import com.vkmusic.ui.components.Artwork
 import com.vkmusic.ui.components.LyricsSheet
 import com.vkmusic.ui.components.TrackActionsMessages
@@ -192,7 +201,7 @@ private fun ColumnScope.PlayerContent(player: Player, actions: TrackActionsViewM
             )
             Spacer(Modifier.width(24.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
-                PlayerDetails(player, metadata, track)
+                PlayerDetails(player, metadata)
                 Spacer(Modifier.height(8.dp))
                 track?.let { TrackActionsRow(it, actions, playerViewModel) }
             }
@@ -207,7 +216,7 @@ private fun ColumnScope.PlayerContent(player: Player, actions: TrackActionsViewM
         modifier = Modifier.fillMaxWidth().aspectRatio(1f).then(cover),
     )
     Spacer(Modifier.height(28.dp))
-    PlayerDetails(player, metadata, track)
+    PlayerDetails(player, metadata)
     Spacer(Modifier.weight(1f))
     track?.let { TrackActionsRow(it, actions, playerViewModel) }
     Spacer(Modifier.height(8.dp))
@@ -215,33 +224,94 @@ private fun ColumnScope.PlayerContent(player: Player, actions: TrackActionsViewM
 
 /** Название, исполнитель, перемотка и кнопки управления — общие для обеих ориентаций. */
 @Composable
-private fun PlayerDetails(player: Player, metadata: MediaMetadata, track: Track?) {
+private fun PlayerDetails(player: Player, metadata: MediaMetadata) {
     val navigator = LocalNavigator.current
+    val context = LocalContext.current
+    val snackbar = LocalSnackbarHostState.current
+    val scope = rememberCoroutineScope()
+    val title = metadata.title?.toString().orEmpty()
+    val artist = metadata.artist?.toString().orEmpty()
+    // Нескольких исполнителей VK пишет через запятую: в поиск идёт один по выбору, в буфер — все.
+    val artists = remember(artist) { artist.splitArtists() }
+    var artistPicker by remember { mutableStateOf(false) }
+
+    fun copy(text: String) {
+        if (text.isBlank()) return
+        context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("MuVK", text))
+        scope.launch { snackbar.showSnackbar("Скопировано: $text") }
+    }
+
     Column(Modifier.fillMaxWidth()) {
         Text(
-            text = metadata.title?.toString() ?: "Ничего не играет",
+            text = title.ifEmpty { "Ничего не играет" },
             style = MaterialTheme.typography.headlineSmall,
             maxLines = 1,
-            modifier = Modifier.basicMarquee(initialDelayMillis = 2_000),
+            modifier = Modifier
+                .basicMarquee(initialDelayMillis = 2_000)
+                .pointerInput(title) { detectTapGestures(onLongPress = { copy(title) }) },
         )
-        val artistId = track?.artistId
         Text(
-            text = metadata.artist?.toString().orEmpty(),
+            text = artist,
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = if (artistId != null) {
-                Modifier.clickable { navigator.openArtist(artistId, track.artist) }
-            } else {
+            modifier = if (artists.isEmpty()) {
                 Modifier
+            } else {
+                Modifier.pointerInput(artists) {
+                    detectTapGestures(
+                        onTap = { if (artists.size == 1) navigator.openSearch(artists.single()) else artistPicker = true },
+                        onLongPress = { copy(artist) },
+                    )
+                }
             },
+        )
+    }
+    if (artistPicker) {
+        ArtistPickerDialog(
+            artists = artists,
+            onSelect = { name ->
+                artistPicker = false
+                navigator.openSearch(name)
+            },
+            onDismiss = { artistPicker = false },
         )
     }
     Spacer(Modifier.height(16.dp))
     SeekBar(player)
     Spacer(Modifier.height(8.dp))
     TransportControls(player)
+}
+
+/** «A, B» → [A, B]. */
+private fun String.splitArtists(): List<String> = split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+
+/** Несколько исполнителей в одном треке: в поиск уходит выбранный. */
+@Composable
+private fun ArtistPickerDialog(artists: List<String>, onSelect: (String) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Найти исполнителя") },
+        text = {
+            Column {
+                artists.forEach { name ->
+                    Text(
+                        name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onSelect(name) }
+                            .padding(horizontal = 4.dp, vertical = 12.dp),
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+    )
 }
 
 @Composable

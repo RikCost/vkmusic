@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -43,12 +44,16 @@ import com.vkmusic.ui.screens.music.PlaylistRow
 @Composable
 fun ExploreScreen(
     contentPadding: PaddingValues,
+    initialQuery: String? = null,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val query by viewModel.query.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val navigator = LocalNavigator.current
     var tab by rememberSaveable { mutableIntStateOf(0) }
+
+    // Переход «найти исполнителя» из плеера: запрос подставляется в уже живущий экран поиска.
+    LaunchedEffect(initialQuery) { if (!initialQuery.isNullOrEmpty()) viewModel.onQueryChange(initialQuery) }
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Text("Обзор", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(start = 16.dp, top = 12.dp))
