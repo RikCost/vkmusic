@@ -36,10 +36,6 @@ class PlayerDataSourceFactory(
 
         override fun getUri(): Uri? = delegate.uri
 
-        override fun getResponseContentType(): String? = delegate.responseContentType
-
-        override fun getResponseMimeType(): String? = delegate.responseMimeType
-
         override fun read(target: ByteArray, offset: Int, length: Int): Int = delegate.read(target, offset, length)
 
         override fun close() {
