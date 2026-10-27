@@ -26,7 +26,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
@@ -293,15 +292,15 @@ private fun ExplicitBadge() {
     }
 }
 
-// Сохранение файлом: идёт — кольцо прогресса, готово — значок файла.
+// Сохранение файлом: видно только процесс — кольцо прогресса. Готовый файл ничем не помечается:
+// приложение не знает, лежит ли он ещё в папке, поэтому обещать «сохранено» не имеет права.
 @Composable
 private fun ExportBadge(status: ExportStatus?) {
     val modifier = Modifier.size(14.dp)
     when (status) {
-        null, is ExportStatus.Failed -> return
         ExportStatus.Queued -> CircularProgressIndicator(modifier, strokeWidth = 2.dp, color = MaterialTheme.colorScheme.tertiary)
         is ExportStatus.Running -> CircularProgressIndicator({ status.percent / 100f }, modifier, strokeWidth = 2.dp, color = MaterialTheme.colorScheme.tertiary)
-        is ExportStatus.Saved -> Icon(Icons.Rounded.AudioFile, contentDescription = "Сохранено в MP3", modifier = modifier, tint = MaterialTheme.colorScheme.primary)
+        else -> return
     }
     Box(Modifier.size(4.dp))
 }

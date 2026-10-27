@@ -166,9 +166,10 @@ class TrackActionsViewModel @Inject constructor(
         track.isPlayable && downloads.value[track.id]?.status.let { it == null || it == DownloadStatus.Failed }
     }
 
-    /** Треки, которые ещё не сохранены в MP3 и не сохраняются сейчас. */
+    /** Треки, которые не сохраняются в MP3 прямо сейчас; повторное сохранение не блокируется. */
     fun pendingExports(tracks: List<Track>): List<Track> = tracks.filter { track ->
-        track.isPlayable && exports.value[track.id].let { it == null || it is ExportStatus.Failed }
+        val status = exports.value[track.id]
+        track.isPlayable && status !is ExportStatus.Queued && status !is ExportStatus.Running
     }
 
     fun notify(message: String) {
