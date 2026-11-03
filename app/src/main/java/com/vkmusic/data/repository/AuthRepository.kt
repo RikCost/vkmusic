@@ -50,6 +50,9 @@ class AuthRepository @Inject constructor(
 
     suspend fun submitCode(code: String): Boolean = qrAuth.validateCode(code)
 
+    /** Ссылка для подтверждения входа в приложении VK на этом же телефоне. */
+    suspend fun requestAppAuth(): String = qrAuth.requestAppAuth()
+
     /** Cookie со страниц VK из WebView: адрес → значение заголовка Cookie. */
     suspend fun completeWebViewLogin(cookies: Map<String, String>) {
         web.clearSession()

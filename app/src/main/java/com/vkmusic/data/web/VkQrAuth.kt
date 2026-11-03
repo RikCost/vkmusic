@@ -46,8 +46,16 @@ class VkQrAuth(
     private var authHash = ""
     private var expiresAtSec = 0L
 
+    // Вход «через приложение VK на этом же телефоне» — свой код (auth_code_flow=1), опрашивается вместе с QR.
+    private var appAuthHash: String? = null
+
+    // Какой из кодов (QR или приложения) попросил ввести код подтверждения.
+    private var codeHash = ""
+
     suspend fun requestQr(): QrCode {
         uuid = randomUuid()
+        appAuthHash = null
+        codeHash = ""
         val pageUrl = VkWebConfig.AUTH_PAGE_URL.toHttpUrl().newBuilder().apply {
             VkWebConfig.authPageParams(uuid).forEach { (key, value) -> addQueryParameter(key, value) }
         }.build().toString()
@@ -61,7 +69,7 @@ class VkQrAuth(
             VkWebConfig.GET_AUTH_CODE_URL,
             mapOf(
                 "device_name" to deviceName,
-                "auth_code_flow" to 0,
+                "auth_code_flow" to FLOW_QR,
                 "verification_hash" to "",
                 "force_regenerate" to 0,
                 "anonymous_token" to anonymousToken,
@@ -75,18 +83,46 @@ class VkQrAuth(
         return QrCode(url, expiresAtSec)
     }
 
+    /**
+     * Вход через приложение VK на этом же телефоне — как кнопка «Войти через приложение» мобильного VK ID
+     * (appToWebAuth): отдельный код с auth_code_flow=1. Для него VK показывает в приложении «Разрешить»;
+     * ссылка QR (auth_code_flow=0) рассчитана на другое устройство, и по ней VK требовал код.
+     * Нужен уже полученный QR (анонимный токен страницы входа). @return ссылка для приложения VK.
+     */
+    suspend fun requestAppAuth(): String {
+        val response = apiCall(
+            VkWebConfig.GET_AUTH_CODE_URL,
+            mapOf(
+                "device_name" to deviceName,
+                "auth_code_flow" to FLOW_APP,
+                "anonymous_token" to anonymousToken,
+                "access_token" to "",
+            ),
+        )
+        appAuthHash = response["auth_hash"].text() ?: throw VkWebAuthException("Не удалось открыть приложение VK")
+        return response["auth_url"].text() ?: throw VkWebAuthException("Не удалось открыть приложение VK")
+    }
+
     suspend fun checkStatus(): QrStatus {
         if (expiresAtSec > 0 && expiresAtSec < System.currentTimeMillis() / 1000) return QrStatus.Expired
+        appAuthHash?.let { hash -> status(hash).takeIf { it != QrStatus.Waiting }?.let { return it } }
+        return status(authHash)
+    }
+
+    private suspend fun status(hash: String): QrStatus {
         val response = apiCall(
             VkWebConfig.CHECK_AUTH_CODE_URL,
-            mapOf("auth_hash" to authHash, "web_auth" to 1, "anonymous_token" to anonymousToken, "access_token" to ""),
+            mapOf("auth_hash" to hash, "web_auth" to 1, "anonymous_token" to anonymousToken, "access_token" to ""),
         )
         return when ((response["status"] as? JsonPrimitive)?.intOrNull) {
             STATUS_CONFIRMED -> {
                 connect(response["super_app_token"].text() ?: throw VkWebAuthException("Ошибка завершения авторизации"))
                 QrStatus.Confirmed
             }
-            STATUS_NEED_CODE -> QrStatus.NeedCode
+            STATUS_NEED_CODE -> {
+                codeHash = hash
+                QrStatus.NeedCode
+            }
             else -> QrStatus.Waiting
         }
     }
@@ -95,7 +131,7 @@ class VkQrAuth(
     suspend fun validateCode(code: String): Boolean {
         val response = apiCall(
             VkWebConfig.VALIDATE_AUTH_CODE_URL,
-            mapOf("auth_hash" to authHash, "validation_code" to code, "access_token" to anonymousToken),
+            mapOf("auth_hash" to codeHash.ifEmpty { authHash }, "validation_code" to code, "access_token" to anonymousToken),
         )
         val status = (response["status"] as? JsonPrimitive)?.intOrNull
         return status == STATUS_WAITING || status == STATUS_CONFIRMED
@@ -192,6 +228,10 @@ class VkQrAuth(
         const val STATUS_WAITING = 0
         const val STATUS_CONFIRMED = 2
         const val STATUS_NEED_CODE = 5
+
+        // auth_code_flow в VK ID: 0 — QR для другого устройства (AUTH_QR), 1 — приложение VK на этом же телефоне.
+        const val FLOW_QR = 0
+        const val FLOW_APP = 1
 
         // configuration.auth.options.additionalHeaders
         val ORIGIN_HEADERS = mapOf(

@@ -1,5 +1,8 @@
 package com.vkmusic.ui.screens.login
 
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.channels.Channel
 import com.vkmusic.data.toUserMessage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -72,6 +75,28 @@ class LoginViewModel @Inject constructor(
             // Как в Meridius: после верного кода статус проверяется сразу, без ожидания.
             poll(immediate = true)
         }
+    }
+
+    private val _openInVkApp = Channel<String>(Channel.BUFFERED)
+
+    /** Ссылка, которую экран открывает в приложении VK. */
+    val openInVkApp: Flow<String> = _openInVkApp.receiveAsFlow()
+
+    /** «Подтвердить в приложении VK»: своя ссылка для этого телефона — VK покажет «Разрешить», а не код. */
+    fun confirmInVkApp() {
+        if (_state.value.qr == null) return
+        viewModelScope.launch {
+            val url = attempt("Не удалось открыть приложение VK") { authRepository.requestAppAuth() } ?: return@launch
+            _openInVkApp.send(url)
+        }
+    }
+
+    /** Возврат из приложения VK: статус проверяется сразу, а не через очередные 3 секунды опроса. */
+    fun checkNow() {
+        val current = _state.value
+        if (current.step != LoginStep.Qr || current.qr == null || current.error != null) return
+        pollJob?.cancel()
+        pollJob = viewModelScope.launch { poll(immediate = true) }
     }
 
     fun openWebView() {

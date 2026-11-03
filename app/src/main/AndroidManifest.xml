@@ -9,6 +9,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
+    <!-- Проверка, установлено ли приложение VK: вход подтверждается в нём, без кода. -->
+    <queries>
+        <package android:name="com.vkontakte.android" />
+    </queries>
+
     <application
         android:name=".MuVkApp"
         android:allowBackup="false"

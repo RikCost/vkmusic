@@ -1,5 +1,8 @@
 package com.vkmusic.ui.screens.login
 
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.Lifecycle
+import android.content.Context
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -126,15 +129,23 @@ private fun QrStep(state: LoginUiState, viewModel: LoginViewModel) {
         if (qr == null && state.error == null) "Загрузка QR-кода..." else "Отсканируйте QR-код, используя камеру вашего телефона",
         textAlign = TextAlign.Center,
     )
-    if (qr != null) {
-        // На том же телефоне QR не отсканировать — ссылку из него можно открыть в приложении VK.
-        OutlinedButton(onClick = {
-            try {
-                context.startActivity(Intent(Intent.ACTION_VIEW, qr.url.toUri()))
-            } catch (_: ActivityNotFoundException) {
-                viewModel.openWebView()
+    val vkAppInstalled = remember { context.isVkAppInstalled() }
+    // Вернулись из приложения VK — статус входа проверяется сразу, а не через очередные 3 секунды.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.checkNow() }
+    LaunchedEffect(viewModel) {
+        viewModel.openInVkApp.collect { url ->
+            if (!context.openInVkApp(url)) {
+                try {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
+                } catch (_: ActivityNotFoundException) {
+                    viewModel.openWebView()
+                }
             }
-        }) {
+        }
+    }
+    if (qr != null && vkAppInstalled) {
+        // На том же телефоне QR не отсканировать — вход подтверждается прямо в приложении VK.
+        OutlinedButton(onClick = viewModel::confirmInVkApp) {
             Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null, Modifier.padding(end = 8.dp))
             Text("Подтвердить в приложении VK")
         }
@@ -146,6 +157,26 @@ private fun QrStep(state: LoginUiState, viewModel: LoginViewModel) {
     TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, VkWebConfig.BASE_URL.toUri())) }) {
         Text("Создать аккаунт VK")
     }
+}
+
+private const val VK_APP_PACKAGE = "com.vkontakte.android"
+
+private fun Context.isVkAppInstalled(): Boolean =
+    runCatching { packageManager.getPackageInfo(VK_APP_PACKAGE, 0) }.isSuccess
+
+/**
+ * Как мобильный сайт VK («Войти через приложение»): ссылка qr.vk.ru/ca открывается с явным пакетом
+ * приложения VK. Без пакета Android отдавал её браузеру, и вход подтверждался кодом, а не в приложении.
+ */
+private fun Context.openInVkApp(url: String): Boolean = try {
+    startActivity(
+        Intent(Intent.ACTION_VIEW, url.toUri())
+            .setPackage(VK_APP_PACKAGE)
+            .addCategory(Intent.CATEGORY_BROWSABLE),
+    )
+    true
+} catch (_: ActivityNotFoundException) {
+    false
 }
 
 @Composable
