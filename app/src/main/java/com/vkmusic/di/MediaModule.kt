@@ -17,6 +17,7 @@ import androidx.media3.exoplayer.offline.DefaultDownloadIndex
 import androidx.media3.exoplayer.offline.DefaultDownloaderFactory
 import androidx.media3.exoplayer.offline.DownloadManager
 import com.vkmusic.data.repository.AppSettings
+import com.vkmusic.data.storage.StreamingCacheSwitch
 import com.vkmusic.data.storage.TunableLruCacheEvictor
 import dagger.Module
 import dagger.Provides
@@ -38,6 +39,11 @@ annotation class StreamingCache
 @Qualifier
 @Retention(AnnotationRetention.RUNTIME)
 annotation class DownloadCache
+
+/** Источник данных плеера: через кэш прослушанного или, если он выключен в настройках, мимо него. */
+@Qualifier
+@Retention(AnnotationRetention.RUNTIME)
+annotation class PlayerDataSource
 
 /** Загрузки как источник для плеера: трек из постоянного хранилища отдаётся без сети. */
 @Qualifier
@@ -100,16 +106,24 @@ object MediaModule {
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
     // Плеер: пишет в исчезающий кэш, а при попадании в него отсутствующего контента идёт через загрузки.
+    // С выключенным кэшем — сразу через загрузки: скачанное играет офлайн, остальное только из сети.
     @Provides
     @Singleton
-    fun provideCacheDataSourceFactory(
+    @PlayerDataSource
+    fun providePlayerDataSourceFactory(
         @StreamingCache cache: Cache,
         @OfflineUpstream offlineUpstream: DataSource.Factory,
-    ): CacheDataSource.Factory = CacheDataSource.Factory()
-        .setCache(cache)
-        .setCacheKeyFactory(cacheKeyFactory)
-        .setUpstreamDataSourceFactory(offlineUpstream)
-        .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        cacheSwitch: StreamingCacheSwitch,
+    ): DataSource.Factory {
+        val cached = CacheDataSource.Factory()
+            .setCache(cache)
+            .setCacheKeyFactory(cacheKeyFactory)
+            .setUpstreamDataSourceFactory(offlineUpstream)
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        return DataSource.Factory {
+            if (cacheSwitch.enabled) cached.createDataSource() else offlineUpstream.createDataSource()
+        }
+    }
 
     @Provides
     @Singleton

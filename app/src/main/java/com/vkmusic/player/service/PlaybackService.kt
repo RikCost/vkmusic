@@ -12,7 +12,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
-import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.DataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
@@ -53,12 +53,13 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import com.vkmusic.di.PlayerDataSource
 import javax.inject.Inject
 
 @AndroidEntryPoint
 class PlaybackService : MediaSessionService() {
 
-    @Inject lateinit var cacheDataSourceFactory: CacheDataSource.Factory
+    @Inject @PlayerDataSource lateinit var playerDataSourceFactory: DataSource.Factory
     @Inject lateinit var audioEffects: AudioEffects
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var queueExtender: QueueExtender
@@ -91,7 +92,7 @@ class PlaybackService : MediaSessionService() {
             DefaultMediaNotificationProvider.Builder(this).build().apply { setSmallIcon(R.drawable.ic_notification) },
         )
         val player = ExoPlayer.Builder(this, EffectsRenderersFactory(this, audioEffects))
-            .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(playerDataSourceFactory))
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)

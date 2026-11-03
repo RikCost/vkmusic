@@ -41,7 +41,8 @@ data class AppSettings(
     val mixOptions: Map<String, List<String>> = emptyMap(),
     // Папка для MP3 — URI дерева SAF; null — «Музыка/MuVK» по умолчанию.
     val exportTreeUri: String? = null,
-    // Исчезающий кэш прослушанного: лимит LruCacheEvictor.
+    // Исчезающий кэш прослушанного: включён ли и лимит LruCacheEvictor.
+    val cacheEnabled: Boolean = true,
     val cacheMaxBytes: Long = DEFAULT_CACHE_MAX_BYTES,
 ) {
     companion object {
@@ -76,6 +77,7 @@ class SettingsRepository @Inject constructor(
             mixOptions = prefs[Keys.MIX_OPTIONS]?.let { runCatching { json.decodeFromString(mixSerializer, it) }.getOrNull() }
                 .orEmpty(),
             exportTreeUri = prefs[Keys.EXPORT_TREE],
+            cacheEnabled = prefs[Keys.CACHE_ENABLED] ?: true,
             cacheMaxBytes = prefs[Keys.CACHE_MAX_BYTES] ?: AppSettings.DEFAULT_CACHE_MAX_BYTES,
         )
     }.distinctUntilChanged()
@@ -109,6 +111,8 @@ class SettingsRepository @Inject constructor(
         if (value == null) it.remove(Keys.EXPORT_TREE) else it[Keys.EXPORT_TREE] = value
     }
 
+    suspend fun setCacheEnabled(value: Boolean) = dataStore.edit { it[Keys.CACHE_ENABLED] = value }
+
     suspend fun setCacheMaxBytes(value: Long) = dataStore.edit { it[Keys.CACHE_MAX_BYTES] = value }
 
     private fun parseLevels(raw: String): List<Float>? =
@@ -127,6 +131,7 @@ class SettingsRepository @Inject constructor(
         val PLAY_LATEST = booleanPreferencesKey("play_latest_on_start")
         val MIX_OPTIONS = stringPreferencesKey("mix_options")
         val EXPORT_TREE = stringPreferencesKey("export_tree_uri")
+        val CACHE_ENABLED = booleanPreferencesKey("cache_enabled")
         val CACHE_MAX_BYTES = longPreferencesKey("cache_max_bytes")
     }
 }

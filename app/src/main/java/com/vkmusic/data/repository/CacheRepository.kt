@@ -1,6 +1,7 @@
 package com.vkmusic.data.repository
 
 import androidx.media3.datasource.cache.Cache
+import com.vkmusic.data.storage.StreamingCacheSwitch
 import com.vkmusic.data.storage.TunableLruCacheEvictor
 import com.vkmusic.di.ApplicationScope
 import com.vkmusic.di.StreamingCache
@@ -21,6 +22,7 @@ import javax.inject.Singleton
 class CacheRepository @Inject constructor(
     @StreamingCache private val cache: Cache,
     private val evictor: TunableLruCacheEvictor,
+    private val cacheSwitch: StreamingCacheSwitch,
     settingsRepository: SettingsRepository,
     @param:ApplicationScope private val scope: CoroutineScope,
 ) {
@@ -31,6 +33,12 @@ class CacheRepository @Inject constructor(
                 .map { it.cacheMaxBytes }
                 .distinctUntilChanged()
                 .collect { evictor.maxBytes = it }
+        }
+        scope.launch {
+            settingsRepository.settings
+                .map { it.cacheEnabled }
+                .distinctUntilChanged()
+                .collect { cacheSwitch.enabled = it }
         }
     }
 

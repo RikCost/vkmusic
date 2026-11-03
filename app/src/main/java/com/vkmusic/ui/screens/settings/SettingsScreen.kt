@@ -115,6 +115,12 @@ class SettingsViewModel @Inject constructor(
 
     fun setCacheLimit(bytes: Long) = launch { repository.setCacheMaxBytes(bytes) }
 
+    // Выключенный кэш не должен и дальше занимать место: прежние копии удаляются сразу.
+    fun setCacheEnabled(value: Boolean) = launch {
+        repository.setCacheEnabled(value)
+        if (!value) runCatching { cacheRepository.clear() }
+    }
+
     fun clearCache() = launch { runCatching { cacheRepository.clear() } }
 
     fun removeAllDownloads() = downloadRepository.removeAll()
@@ -218,7 +224,15 @@ fun SettingsScreen(
             }
 
             item { SectionTitle("Кэш прослушанного") }
-            item { CacheSection(current.cacheMaxBytes, viewModel) }
+            item {
+                SwitchRow(
+                    "Кэшировать прослушанное",
+                    "Повторное прослушивание без загрузки из сети",
+                    current.cacheEnabled,
+                    viewModel::setCacheEnabled,
+                )
+            }
+            if (current.cacheEnabled) item { CacheSection(current.cacheMaxBytes, viewModel) }
 
             item { SectionTitle("Загрузки") }
             item { DownloadsSection(viewModel) }
