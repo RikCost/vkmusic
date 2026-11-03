@@ -122,7 +122,6 @@ class PlaybackService : MediaSessionService() {
                 audioEffects.normalizer = settings.normalizer
                 rewindToStart = settings.rewindToStart
                 saveLatest = settings.saveLatest
-                if (player.playbackParameters.speed != settings.playbackSpeed) player.setPlaybackSpeed(settings.playbackSpeed)
             }
         }
     }

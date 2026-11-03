@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
@@ -78,9 +79,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewModelScope
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -88,9 +87,9 @@ import androidx.media3.ui.compose.state.rememberCurrentMediaItemState
 import androidx.media3.ui.compose.state.rememberNextButtonState
 import androidx.media3.ui.compose.state.rememberPreviousButtonState
 import androidx.media3.ui.compose.state.rememberProgressStateWithTickInterval
+import com.vkmusic.data.export.ExportStatus
 import com.vkmusic.data.model.Track
 import com.vkmusic.data.repository.DownloadStatus
-import com.vkmusic.data.repository.SettingsRepository
 import com.vkmusic.player.queue.toTrack
 import com.vkmusic.ui.LocalSnackbarHostState
 import com.vkmusic.ui.components.Artwork
@@ -100,39 +99,13 @@ import com.vkmusic.ui.components.TrackActionsViewModel
 import com.vkmusic.ui.components.shareText
 import com.vkmusic.ui.formatDuration
 import com.vkmusic.ui.navigation.LocalNavigator
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import javax.inject.Inject
-
-@HiltViewModel
-class PlayerViewModel @Inject constructor(
-    private val settingsRepository: SettingsRepository,
-) : ViewModel() {
-
-    val speed: StateFlow<Float> = settingsRepository.settings.map { it.playbackSpeed }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 1f)
-
-    // Скорость применяет PlaybackService из настроек — так она переживает перезапуск плеера.
-    fun cycleSpeed() {
-        val next = SPEEDS.firstOrNull { it > speed.value + 0.01f } ?: SPEEDS.first()
-        viewModelScope.launch { settingsRepository.setPlaybackSpeed(next) }
-    }
-
-    private companion object {
-        val SPEEDS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
-    }
-}
 
 @Composable
 fun PlayerScreen(
     player: Player?,
     onBack: () -> Unit,
     actions: TrackActionsViewModel = hiltViewModel(),
-    playerViewModel: PlayerViewModel = hiltViewModel(),
 ) {
     TrackActionsMessages(actions)
     var queueOpen by remember { mutableStateOf(false) }
@@ -164,7 +137,7 @@ fun PlayerScreen(
                 Text("Плеер не подключён")
             }
         } else {
-            PlayerContent(player, actions, playerViewModel)
+            PlayerContent(player, actions)
         }
     }
 
@@ -172,7 +145,7 @@ fun PlayerScreen(
 }
 
 @Composable
-private fun ColumnScope.PlayerContent(player: Player, actions: TrackActionsViewModel, playerViewModel: PlayerViewModel) {
+private fun ColumnScope.PlayerContent(player: Player, actions: TrackActionsViewModel) {
     val itemState = rememberCurrentMediaItemState(player)
     val metadata = itemState.mediaMetadata
     val key = itemState.mediaItem?.mediaId.orEmpty()
@@ -203,7 +176,7 @@ private fun ColumnScope.PlayerContent(player: Player, actions: TrackActionsViewM
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
                 PlayerDetails(player, metadata)
                 Spacer(Modifier.height(8.dp))
-                track?.let { TrackActionsRow(it, actions, playerViewModel) }
+                track?.let { TrackActionsRow(it, actions) }
             }
         }
         return
@@ -218,7 +191,7 @@ private fun ColumnScope.PlayerContent(player: Player, actions: TrackActionsViewM
     Spacer(Modifier.height(28.dp))
     PlayerDetails(player, metadata)
     Spacer(Modifier.weight(1f))
-    track?.let { TrackActionsRow(it, actions, playerViewModel) }
+    track?.let { TrackActionsRow(it, actions) }
     Spacer(Modifier.height(8.dp))
 }
 
@@ -315,10 +288,10 @@ private fun ArtistPickerDialog(artists: List<String>, onSelect: (String) -> Unit
 }
 
 @Composable
-private fun TrackActionsRow(track: Track, actions: TrackActionsViewModel, playerViewModel: PlayerViewModel) {
+private fun TrackActionsRow(track: Track, actions: TrackActionsViewModel) {
     val library by actions.library.collectAsStateWithLifecycle()
     val downloads by actions.downloads.collectAsStateWithLifecycle()
-    val speed by playerViewModel.speed.collectAsStateWithLifecycle()
+    val exports by actions.exports.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val inLibrary = track in library
     val downloadStatus = downloads[track.id]?.status
@@ -336,14 +309,12 @@ private fun TrackActionsRow(track: Track, actions: TrackActionsViewModel, player
             Icon(Icons.Rounded.Share, contentDescription = "Поделиться")
         }
         DownloadButton(downloadStatus, onDownload = { actions.download(listOf(track)) }, onRemove = { actions.removeDownload(track) })
+        ExportButton(exports[track.id], onExport = { actions.exportMp3(listOf(track)) }, onCancel = { actions.cancelExport(track) })
         IconButton(onClick = { actions.playTrackMix(track) }) {
             Icon(Icons.Rounded.AutoAwesome, contentDescription = "Микс по треку")
         }
         IconButton(onClick = { lyricsOpen = true }, enabled = track.hasLyrics) {
             Icon(Icons.Rounded.Lyrics, contentDescription = "Текст песни")
-        }
-        TextButton(onClick = playerViewModel::cycleSpeed) {
-            Text("x${formatSpeed(speed)}", color = if (speed != 1f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
         }
     }
     if (lyricsOpen) LyricsSheet(track, onDismiss = { lyricsOpen = false })
@@ -372,9 +343,31 @@ private fun DownloadButton(status: DownloadStatus?, onDownload: () -> Unit, onRe
     }
 }
 
-private const val PAUSED_COVER_SCALE = 0.88f
+/**
+ * Сохранить в MP3 / прогресс с отменой. Готовый файл не отмечается: приложение не знает, лежит ли он ещё
+ * в папке, поэтому после сохранения кнопка снова предлагает сохранить.
+ */
+@Composable
+private fun ExportButton(status: ExportStatus?, onExport: () -> Unit, onCancel: () -> Unit) {
+    when (status) {
+        ExportStatus.Queued, is ExportStatus.Running -> IconButton(onClick = onCancel) {
+            Box(contentAlignment = Alignment.Center) {
+                val color = MaterialTheme.colorScheme.tertiary
+                if (status is ExportStatus.Running) {
+                    CircularProgressIndicator({ status.percent / 100f }, Modifier.size(28.dp), color = color, strokeWidth = 2.dp)
+                } else {
+                    CircularProgressIndicator(Modifier.size(28.dp), color = color, strokeWidth = 2.dp)
+                }
+                Icon(Icons.Rounded.Close, contentDescription = "Отменить сохранение MP3", modifier = Modifier.size(16.dp))
+            }
+        }
+        else -> IconButton(onClick = onExport) {
+            Icon(Icons.Rounded.SaveAlt, contentDescription = "Сохранить в MP3")
+        }
+    }
+}
 
-private fun formatSpeed(speed: Float): String = speed.toString().removeSuffix(".0")
+private const val PAUSED_COVER_SCALE = 0.88f
 
 @Composable
 private fun SeekBar(player: Player) {

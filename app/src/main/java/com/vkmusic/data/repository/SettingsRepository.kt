@@ -38,7 +38,6 @@ data class AppSettings(
     val rewindToStart: Boolean = true,
     val saveLatest: Boolean = true,
     val playLatestOnStart: Boolean = false,
-    val playbackSpeed: Float = 1f,
     val mixOptions: Map<String, List<String>> = emptyMap(),
     // Папка для MP3 — URI дерева SAF; null — «Музыка/MuVK» по умолчанию.
     val exportTreeUri: String? = null,
@@ -74,7 +73,6 @@ class SettingsRepository @Inject constructor(
             rewindToStart = prefs[Keys.REWIND] ?: true,
             saveLatest = prefs[Keys.SAVE_LATEST] ?: true,
             playLatestOnStart = prefs[Keys.PLAY_LATEST] ?: false,
-            playbackSpeed = prefs[Keys.SPEED] ?: 1f,
             mixOptions = prefs[Keys.MIX_OPTIONS]?.let { runCatching { json.decodeFromString(mixSerializer, it) }.getOrNull() }
                 .orEmpty(),
             exportTreeUri = prefs[Keys.EXPORT_TREE],
@@ -103,8 +101,6 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setPlayLatestOnStart(value: Boolean) = dataStore.edit { it[Keys.PLAY_LATEST] = value }
 
-    suspend fun setPlaybackSpeed(value: Float) = dataStore.edit { it[Keys.SPEED] = value }
-
     suspend fun setMixOptions(value: Map<String, List<String>>) = dataStore.edit {
         it[Keys.MIX_OPTIONS] = json.encodeToString(mixSerializer, value)
     }
@@ -129,7 +125,6 @@ class SettingsRepository @Inject constructor(
         val REWIND = booleanPreferencesKey("rewind_to_start")
         val SAVE_LATEST = booleanPreferencesKey("save_latest")
         val PLAY_LATEST = booleanPreferencesKey("play_latest_on_start")
-        val SPEED = floatPreferencesKey("playback_speed")
         val MIX_OPTIONS = stringPreferencesKey("mix_options")
         val EXPORT_TREE = stringPreferencesKey("export_tree_uri")
         val CACHE_MAX_BYTES = longPreferencesKey("cache_max_bytes")
