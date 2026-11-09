@@ -8,6 +8,7 @@ import com.vkmusic.ui.formatTracks
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,26 +24,14 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
-import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.Radar
-import androidx.compose.material.icons.rounded.SaveAlt
-import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
@@ -58,8 +47,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -74,7 +64,6 @@ import com.vkmusic.data.export.ExportStatus
 import com.vkmusic.data.repository.DownloadStatus
 import com.vkmusic.ui.LocalSnackbarHostState
 import com.vkmusic.ui.formatDuration
-import com.vkmusic.ui.navigation.LocalNavigator
 
 @Composable
 fun TrackList(
@@ -148,7 +137,6 @@ fun TrackRow(
     isCurrent: Boolean,
     onClick: () -> Unit,
     actions: TrackActionsViewModel,
-    extraMenu: (@Composable (close: () -> Unit) -> Unit)? = null,
     isPlaying: Boolean = false,
 ) {
     val downloadsState = actions.downloads.collectAsStateWithLifecycle()
@@ -159,13 +147,22 @@ fun TrackRow(
     // Колонка «Альбом» как в таблице Meridius — только там, где хватает ширины.
     val wide = LocalConfiguration.current.screenWidthDp >= WIDE_LAYOUT_DP
     val colors = MaterialTheme.colorScheme
+    val haptics = LocalHapticFeedback.current
+    var menuOpen by remember { mutableStateOf(false) }
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
             .background(if (isCurrent) colors.surfaceVariant else colors.background)
-            .clickable(onClick = onClick)
+            // Долгое нажатие открывает те же действия, что и «⋮»: в строку попасть проще, чем в кнопку у края.
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    menuOpen = true
+                },
+            )
             .padding(start = 8.dp, top = 6.dp, bottom = 6.dp),
     ) {
         Box(Modifier.width(32.dp), contentAlignment = Alignment.Center) {
@@ -209,65 +206,11 @@ fun TrackRow(
             )
         }
         Text(formatDuration(track.durationSec * 1000L), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
-        TrackMenuButton(track, status, export, actions, extraMenu)
-    }
-}
-
-@Composable
-private fun TrackMenuButton(
-    track: Track,
-    status: DownloadStatus?,
-    export: ExportStatus?,
-    actions: TrackActionsViewModel,
-    extraMenu: (@Composable (close: () -> Unit) -> Unit)?,
-) {
-    val navigator = LocalNavigator.current
-    val context = LocalContext.current
-    val library by actions.library.collectAsStateWithLifecycle()
-    val inLibrary = track in library
-    var menuOpen by remember { mutableStateOf(false) }
-    var playlistPicker by remember { mutableStateOf(false) }
-    var lyricsOpen by remember { mutableStateOf(false) }
-
-    Box {
         IconButton(onClick = { menuOpen = true }) {
             Icon(Icons.Rounded.MoreVert, contentDescription = "Действия")
         }
-        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            fun closing(action: () -> Unit): () -> Unit = {
-                menuOpen = false
-                action()
-            }
-            if (inLibrary) {
-                MenuAction("Удалить из моей музыки", Icons.Rounded.Delete, closing { actions.removeFromLibrary(track) })
-            } else {
-                MenuAction("Добавить к себе", Icons.Rounded.Add, closing { actions.addToLibrary(track) })
-            }
-            MenuAction("Добавить в плейлист", Icons.AutoMirrored.Rounded.PlaylistAdd, closing { playlistPicker = true })
-            MenuAction("Воспроизвести следующим", Icons.AutoMirrored.Rounded.QueueMusic, closing { actions.playNext(track) })
-            MenuAction("Микс по треку", Icons.Rounded.AutoAwesome, closing { actions.playTrackMix(track) })
-            MenuAction("Похожие", Icons.Rounded.Radar, closing { navigator.openSimilar(track) })
-            if (track.hasLyrics) MenuAction("Открыть текст песни", Icons.Rounded.Lyrics, closing { lyricsOpen = true })
-            track.artistId?.let { artistId ->
-                MenuAction("Перейти к исполнителю", Icons.Rounded.Person, closing { navigator.openArtist(artistId, track.artist) })
-            }
-            MenuAction("Поделиться", Icons.Rounded.Share, closing { context.shareText("${track.artist} — ${track.title}\n${track.shareUrl}") })
-            if (export is ExportStatus.Queued || export is ExportStatus.Running) {
-                MenuAction("Отменить сохранение MP3", Icons.Rounded.Close, closing { actions.cancelExport(track) })
-            } else {
-                MenuAction("Сохранить в MP3", Icons.Rounded.SaveAlt, closing { actions.exportMp3(listOf(track)) })
-            }
-            if (status == null || status == DownloadStatus.Failed) {
-                MenuAction("Скачать аудиозапись", Icons.Rounded.Download, closing { actions.download(listOf(track)) })
-            } else {
-                MenuAction("Удалить загрузку", Icons.Rounded.Delete, closing { actions.removeDownload(track) })
-            }
-            extraMenu?.invoke { menuOpen = false }
-        }
     }
-
-    if (playlistPicker) PlaylistPickerDialog(track, actions, onDismiss = { playlistPicker = false })
-    if (lyricsOpen) LyricsSheet(track, onDismiss = { lyricsOpen = false })
+    TrackActions(track, open = menuOpen, onClose = { menuOpen = false }, actions = actions)
 }
 
 @Composable

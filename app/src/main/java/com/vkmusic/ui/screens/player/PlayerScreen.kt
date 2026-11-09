@@ -48,7 +48,6 @@ import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Lyrics
-import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
@@ -58,7 +57,6 @@ import com.vkmusic.ui.components.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -97,6 +95,19 @@ import com.vkmusic.ui.components.LyricsSheet
 import com.vkmusic.ui.components.TrackActionsMessages
 import com.vkmusic.ui.components.TrackActionsViewModel
 import com.vkmusic.ui.components.shareText
+import com.vkmusic.ui.components.TrackActions
+import com.vkmusic.ui.components.rememberArtworkColor
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.rounded.AudioFile
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.compositeOver
 import com.vkmusic.ui.components.SwipeDirection
 import com.vkmusic.ui.components.SwipeState
 import com.vkmusic.ui.components.rememberSwipeState
@@ -116,7 +127,18 @@ fun PlayerScreen(
 ) {
     TrackActionsMessages(actions)
     var queueOpen by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
     val swipe = rememberSwipeState()
+    val current = player?.let { rememberCurrentMediaItemState(it) }
+    val currentTrack = current?.mediaItem?.toTrack()
+    // Верх экрана подкрашен главным цветом обложки и плавно уходит в фон темы.
+    val background = MaterialTheme.colorScheme.background
+    val artworkColor = rememberArtworkColor(current?.mediaMetadata?.artworkUri?.toString())
+    val backdrop by animateColorAsState(
+        targetValue = artworkColor?.copy(alpha = BACKDROP_ALPHA)?.compositeOver(background) ?: background,
+        animationSpec = tween(BACKDROP_FADE_MS),
+        label = "player_backdrop",
+    )
     val screenHeight = LocalWindowInfo.current.containerSize.height.toFloat()
 
     // Свайп по экрану: влево — следующий трек, вправо — предыдущий (едет обложка), вниз — свернуть плеер.
@@ -148,7 +170,7 @@ fun PlayerScreen(
                 },
             )
             .graphicsLayer { translationY = swipe.offsetY.value.coerceAtLeast(0f) }
-            .background(MaterialTheme.colorScheme.background)
+            .background(Brush.verticalGradient(0f to backdrop, BACKDROP_END to background))
             .safeDrawingPadding()
             .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -166,6 +188,11 @@ fun PlayerScreen(
             IconButton(onClick = { queueOpen = true }, enabled = player != null) {
                 Icon(Icons.AutoMirrored.Rounded.QueueMusic, contentDescription = "Очередь")
             }
+            // Все действия с треком, включая те, которым не хватило места в нижнем ряду:
+            // «В плейлист», «Похожие», «К исполнителю», «Воспроизвести следующим».
+            IconButton(onClick = { menuOpen = true }, enabled = currentTrack != null) {
+                Icon(Icons.Rounded.MoreVert, contentDescription = "Действия с треком")
+            }
         }
         if (player == null) {
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
@@ -177,6 +204,7 @@ fun PlayerScreen(
     }
 
     if (queueOpen && player != null) QueueSheet(player, onDismiss = { queueOpen = false })
+    currentTrack?.let { TrackActions(it, open = menuOpen, onClose = { menuOpen = false }, actions = actions) }
 }
 
 @Composable
@@ -206,7 +234,7 @@ private fun ColumnScope.PlayerContent(player: Player, actions: TrackActionsViewM
             Artwork(
                 url = metadata.artworkUri?.toString(),
                 key = key,
-                cornerRadius = 8.dp,
+                cornerRadius = 12.dp,
                 modifier = Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true).then(cover),
             )
             Spacer(Modifier.width(24.dp))
@@ -222,7 +250,7 @@ private fun ColumnScope.PlayerContent(player: Player, actions: TrackActionsViewM
     Artwork(
         url = metadata.artworkUri?.toString(),
         key = key,
-        cornerRadius = 8.dp,
+        cornerRadius = 12.dp,
         modifier = Modifier.fillMaxWidth().aspectRatio(1f).then(cover),
     )
     Spacer(Modifier.height(28.dp))
@@ -399,44 +427,68 @@ private fun ExportButton(status: ExportStatus?, onExport: () -> Unit, onCancel: 
             }
         }
         else -> IconButton(onClick = onExport) {
-            Icon(Icons.Rounded.SaveAlt, contentDescription = "Сохранить в MP3")
+            Icon(Icons.Rounded.AudioFile, contentDescription = "Сохранить в MP3")
         }
     }
 }
 
 private const val PAUSED_COVER_SCALE = 0.88f
 
+// Насколько цвет обложки проступает в фоне и где градиент сходит на нет (доля высоты экрана).
+private const val BACKDROP_ALPHA = 0.45f
+private const val BACKDROP_END = 0.7f
+private const val BACKDROP_FADE_MS = 600
+
 // Свайп вниз уводит плеер за экран и закрывает его; если закрыть не вышло, через это время он вернётся.
 private const val CLOSE_FALLBACK_MS = 1_500L
 
+/**
+ * Перемотка: тонкая полоса, на которой видно и сыгранное, и уже загруженное (сколько проиграет без сети).
+ * Под пальцем полоса и бегунок утолщаются; слева — время под бегунком, справа — длина трека.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SeekBar(player: Player) {
     val progress = rememberProgressStateWithTickInterval(player, 250L)
     val duration = progress.durationMs.coerceAtLeast(0L)
     var dragPosition by remember { mutableStateOf<Float?>(null) }
-    val position = dragPosition ?: if (duration > 0) progress.currentPositionMs.toFloat() / duration else 0f
+    val position = (dragPosition ?: if (duration > 0) progress.currentPositionMs.toFloat() / duration else 0f).coerceIn(0f, 1f)
+    val buffered = if (duration > 0) (progress.bufferedPositionMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
     val colors = MaterialTheme.colorScheme
+    val dragging = dragPosition != null
+    val thumbSize by animateDpAsState(if (dragging) 18.dp else 12.dp, label = "seek_thumb")
+    val trackHeight by animateDpAsState(if (dragging) 6.dp else 4.dp, label = "seek_track")
 
     Slider(
-        value = position.coerceIn(0f, 1f),
+        value = position,
         onValueChange = { dragPosition = it },
         onValueChangeFinished = {
             dragPosition?.let { player.seekTo((it * duration).toLong()) }
             dragPosition = null
         },
         enabled = duration > 0,
-        colors = SliderDefaults.colors(
-            thumbColor = colors.primary,
-            activeTrackColor = colors.primary,
-            inactiveTrackColor = colors.outlineVariant,
-        ),
+        thumb = {
+            // Рамка выше бегунка: за неё удобно ухватиться пальцем, хотя сам он маленький.
+            Box(Modifier.size(width = 20.dp, height = 40.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(thumbSize).background(colors.primary, CircleShape))
+            }
+        },
+        track = { state ->
+            Canvas(Modifier.fillMaxWidth().height(trackHeight)) {
+                val radius = CornerRadius(size.height / 2)
+                drawRoundRect(colors.outlineVariant, cornerRadius = radius)
+                drawRoundRect(colors.outline, size = Size(size.width * buffered, size.height), cornerRadius = radius)
+                drawRoundRect(colors.primary, size = Size(size.width * state.value, size.height), cornerRadius = radius)
+            }
+        },
     )
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(
-            "${formatDuration((position * duration).toLong())} / ${formatDuration(duration)}",
+            formatDuration((position * duration).toLong()),
             style = MaterialTheme.typography.labelMedium,
-            color = colors.onSurfaceVariant,
+            color = if (dragging) colors.primary else colors.onSurfaceVariant,
         )
+        Text(formatDuration(duration), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
     }
 }
 

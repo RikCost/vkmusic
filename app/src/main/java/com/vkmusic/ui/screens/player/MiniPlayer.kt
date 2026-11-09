@@ -60,9 +60,11 @@ fun MiniPlayer(
 
     // Свайп влево — следующий трек, вправо — предыдущий, вверх — открыть плеер.
     Column(
-        modifier = modifier
+        // Фон раньше отступа из modifier: иначе под мини-плеером, в полосе системных жестов, просвечивает список.
+        modifier = Modifier
             .fillMaxWidth()
             .background(colors.surfaceContainer)
+            .then(modifier)
             .clickable(onClick = onClick)
             .trackSwipes(
                 swipe,

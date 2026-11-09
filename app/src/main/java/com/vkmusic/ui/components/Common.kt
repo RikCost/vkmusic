@@ -32,7 +32,7 @@ import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.SaveAlt
+import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -208,7 +208,7 @@ fun PlayAllRow(tracks: List<Track>, actions: TrackActionsViewModel, modifier: Mo
             onClick = { bulk.export(actions, tracks) },
             enabled = tracks.isNotEmpty(),
         ) {
-            Icon(Icons.Rounded.SaveAlt, contentDescription = "Сохранить все в MP3")
+            Icon(Icons.Rounded.AudioFile, contentDescription = "Сохранить все в MP3")
         }
         Text(
             formatTracks(tracks.size),

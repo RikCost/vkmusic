@@ -19,7 +19,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
-import androidx.compose.material.icons.rounded.SaveAlt
+import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.DropdownMenu
@@ -209,7 +209,7 @@ private fun PlaylistHeader(
                 onClick = { bulk.export(actions, tracks, folder = playlist.title) },
                 enabled = tracks.isNotEmpty(),
             ) {
-                Icon(Icons.Rounded.SaveAlt, contentDescription = "Сохранить плейлист в MP3")
+                Icon(Icons.Rounded.AudioFile, contentDescription = "Сохранить плейлист в MP3")
             }
             // «Поделиться» — в меню: семь кнопок в ряд не помещались на экране шириной 360dp.
             Box {
