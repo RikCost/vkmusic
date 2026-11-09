@@ -1,5 +1,6 @@
 package com.vkmusic.data.api.vk
 
+import com.vkmusic.data.web.VkWebConfig
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import mockwebserver3.MockResponse
@@ -53,8 +54,10 @@ class VkApiClientTest {
         val request = server.takeRequest()
         val body = requireNotNull(request.body).utf8()
         assertEquals("/method/audio.get", request.url.encodedPath)
-        assertEquals(VkConfig.USER_AGENT, request.headers["User-Agent"])
-        assertEquals(VkConfig.ANDROID_CLIENT_VALUE, request.headers[VkConfig.ANDROID_CLIENT_HEADER])
+        // Токен веб-сессии — и запрос как из неё: браузер, а не приложение VK для Android.
+        assertEquals(VkWebConfig.USER_AGENT, request.headers["User-Agent"])
+        assertEquals("https://vk.ru", request.headers["Origin"])
+        assertNull(request.headers["X-VK-Android-Client"])
         assertTrue(body.contains("access_token=test-token"))
         assertTrue(body.contains("v=${VkConfig.API_VERSION}"))
         assertTrue(body.contains("owner_id=42"))

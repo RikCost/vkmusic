@@ -23,12 +23,12 @@ import kotlinx.coroutines.launch
 import java.io.IOException
 import javax.inject.Inject
 
-enum class LoginStep { Qr, Code, WebView, Done }
+enum class LoginStep { Start, Qr, Code, WebView, Done }
 
 data class LoginUiState(
-    val step: LoginStep = LoginStep.Qr,
+    val step: LoginStep = LoginStep.Start,
     val qr: QrCode? = null,
-    val isLoading: Boolean = true,
+    val isLoading: Boolean = false,
     val error: String? = null,
     val codeError: String? = null,
     // Сеть пропала: QR остаётся на экране, запросы повторяются сами.
@@ -46,9 +46,8 @@ class LoginViewModel @Inject constructor(
     private var pollJob: Job? = null
     private var webViewJob: Job? = null
 
-    init {
-        loadQr()
-    }
+    // QR-код не запрашивается, пока его не выбрали: основной вход — через браузер. После входа по QR
+    // VK замораживал профиль, поэтому QR остался запасным способом, и лишних запросов к VK ID экран не делает.
 
     /** Новый QR-код (Meridius `generateQR`) и опрос статуса раз в 3 секунды. */
     fun loadQr() {
@@ -104,7 +103,13 @@ class LoginViewModel @Inject constructor(
         _state.update { it.copy(step = LoginStep.WebView, error = null, reconnecting = false) }
     }
 
-    fun closeWebView() = loadQr()
+    fun closeWebView() = backToStart()
+
+    /** Назад к выбору способа входа: опрос QR-кода останавливается. */
+    fun backToStart() {
+        pollJob?.cancel()
+        _state.value = LoginUiState()
+    }
 
     /** Страница VK в WebView загрузилась: пробуем перенести её cookie и получить токен. */
     fun onWebViewPage(cookies: Map<String, String>) {

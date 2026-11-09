@@ -2,6 +2,7 @@ package com.vkmusic.di
 
 import com.vkmusic.BuildConfig
 import com.vkmusic.data.api.vk.VkHeadersInterceptor
+import com.vkmusic.data.api.vk.VkRateLimitInterceptor
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -27,6 +28,7 @@ object NetworkModule {
     @Singleton
     fun provideOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(VkHeadersInterceptor())
+        .addInterceptor(VkRateLimitInterceptor())
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .apply {

@@ -93,7 +93,11 @@ fun LoginScreen(
         ) {
             Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
             Text("Музыкальный плеер для VK", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (state.step == LoginStep.Code) CodeStep(state, viewModel) else QrStep(state, viewModel)
+            when (state.step) {
+                LoginStep.Code -> CodeStep(state, viewModel)
+                LoginStep.Qr -> QrStep(state, viewModel)
+                else -> StartStep(viewModel)
+            }
             if (state.reconnecting) {
                 Text("Нет связи с VK — переподключаемся…", color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
             }
@@ -107,10 +111,38 @@ fun LoginScreen(
     }
 }
 
+/** Выбор способа входа. Основной — страница VK в браузере: так входит обычный человек, и VK к нему не придирается. */
+@Composable
+private fun StartStep(viewModel: LoginViewModel) {
+    val context = LocalContext.current
+    Text(
+        "Откроется обычная страница входа VK",
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.padding(top = 32.dp),
+    )
+    Button(onClick = viewModel::openWebView, modifier = Modifier.fillMaxWidth()) {
+        Icon(Icons.Rounded.Language, contentDescription = null, Modifier.padding(end = 8.dp))
+        Text("Войти через браузер")
+    }
+    TextButton(onClick = viewModel::loadQr) { Text("Войти по QR-коду") }
+    TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, VkWebConfig.BASE_URL.toUri())) }) {
+        Text("Создать аккаунт VK")
+    }
+}
+
 @Composable
 private fun QrStep(state: LoginUiState, viewModel: LoginViewModel) {
     val context = LocalContext.current
     val qr = state.qr
+    BackHandler(onBack = viewModel::backToStart)
+    Text(
+        "После входа по QR-коду VK может заморозить профиль: такой вход он считает подозрительным. " +
+            "Надёжнее войти через браузер.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error,
+        textAlign = TextAlign.Center,
+    )
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
@@ -154,9 +186,7 @@ private fun QrStep(state: LoginUiState, viewModel: LoginViewModel) {
         Icon(Icons.Rounded.Language, contentDescription = null, Modifier.padding(end = 8.dp))
         Text("Войти через браузер")
     }
-    TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, VkWebConfig.BASE_URL.toUri())) }) {
-        Text("Создать аккаунт VK")
-    }
+    TextButton(onClick = viewModel::backToStart) { Text("Назад") }
 }
 
 private const val VK_APP_PACKAGE = "com.vkontakte.android"

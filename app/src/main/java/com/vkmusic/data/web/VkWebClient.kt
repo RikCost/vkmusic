@@ -15,6 +15,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import okhttp3.FormBody
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -77,7 +78,7 @@ class VkWebClient(
         cookieJar.ensureLoaded()
         var current = url.toHttpUrl()
         repeat(MAX_REDIRECTS) {
-            val builder = Request.Builder().url(current).applyHeaders(headers)
+            val builder = Request.Builder().url(current).applyHeaders(current, isPost = body != null, headers)
             val request = if (body != null) builder.post(body).build() else builder.get().build()
             val response: Response = http.newCall(request).await()
             response.use {
@@ -182,14 +183,24 @@ class VkWebClient(
         cookieJar.import(httpUrl, cookies)
     }
 
-    private fun Request.Builder.applyHeaders(extra: Map<String, String>): Request.Builder = apply {
+    // Заголовки как у Firefox: страница открывается как страница, а al_audio.php вызывается как XHR
+    // со страницы музыки. Запрос с одним User-Agent и «Accept: */*» браузер не отправляет никогда.
+    private fun Request.Builder.applyHeaders(url: HttpUrl, isPost: Boolean, extra: Map<String, String>): Request.Builder = apply {
         header("User-Agent", VkWebConfig.USER_AGENT)
-        header("Accept", "*/*")
+        header("Accept", if (isPost) "*/*" else PAGE_ACCEPT)
+        header("Accept-Language", VkWebConfig.ACCEPT_LANGUAGE)
+        if (isPost && url.host == WEB_HOST) {
+            header("X-Requested-With", "XMLHttpRequest")
+            header("Origin", VkWebConfig.WEB_ORIGIN)
+            header("Referer", VkWebConfig.AUDIO_PAGE_URL)
+        }
         extra.forEach { (name, value) -> header(name, value) }
     }
 
     private companion object {
         const val MAX_REDIRECTS = 10
+        const val WEB_HOST = "vk.ru"
+        const val PAGE_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         const val LOGIN_PAGE_MARKER = "Index.initRedesignedVkId"
         const val LOGIN_FORM_MARKER = "id.vk.ru/auth"
         val REDIRECT_CODES = setOf(301, 302, 303, 307, 308)

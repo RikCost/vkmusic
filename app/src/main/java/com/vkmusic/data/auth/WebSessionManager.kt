@@ -1,8 +1,8 @@
 package com.vkmusic.data.auth
 
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.CancellationException
 import com.vkmusic.data.web.VkSessionExpiredException
 import com.vkmusic.data.web.VkQrAuth
@@ -26,17 +26,20 @@ class WebSessionManager @Inject constructor(
 ) {
     private val refreshMutex = Mutex()
 
-    private val _sessionExpired = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    // Канал, а не SharedFlow: событие ждёт подписчика. Сессия часто оказывается истёкшей на первом же
+    // запросе после запуска, когда экран ещё не подписался, — раньше оно терялось, и пользователь
+    // оставался на главной с ошибкой «Сессия VK истекла» и бесполезной кнопкой «Повторить».
+    private val _sessionExpired = Channel<Unit>(Channel.CONFLATED)
 
-    /** VK явно сообщил, что сессии больше нет: интерфейс выходит на экран входа. */
-    val sessionExpired: SharedFlow<Unit> = _sessionExpired.asSharedFlow()
+    /** VK явно сообщил, что сессии больше нет: интерфейс выходит на экран входа. Подписчик один — корневой экран. */
+    val sessionExpired: Flow<Unit> = _sessionExpired.receiveAsFlow()
 
     // После сетевого сбоя web_token не запрашивается на каждом запросе — только раз в [REFRESH_BACKOFF_MS].
     @Volatile
     private var refreshBlockedUntil = 0L
 
     init {
-        web.onSessionLost = { _sessionExpired.tryEmit(Unit) }
+        web.onSessionLost = { _sessionExpired.trySend(Unit) }
     }
 
     /** Токен для официального API; обновляется, если устарел. null — сессии нет. */
@@ -52,9 +55,19 @@ class WebSessionManager @Inject constructor(
         }
     }
 
-    /** Официальный API отверг токен (ошибка 5): пробуем получить новый, и только отказ VK — конец сессии. */
-    suspend fun onApiAuthError() {
-        refreshMutex.withLock { tryObtain() }
+    /**
+     * Официальный API отверг токен [rejectedToken] (ошибка 5): пробуем получить новый. Конец сессии — отказ VK
+     * выдать токен или отказ принять только что выданный: VK закрывает сессию не сразу целиком, и какое-то
+     * время web_token ещё отвечает, а API его токены уже не берёт. Без второго условия приложение в этот
+     * промежуток зависало на ошибке с кнопкой «Повторить», которая ничего не могла исправить.
+     */
+    suspend fun onApiAuthError(rejectedToken: String) {
+        refreshMutex.withLock {
+            val session = sessionStore.current() ?: return
+            // Отвергнут уже заменённый токен: параллельный запрос успел его обновить.
+            if (session.accessToken != rejectedToken) return
+            if (isFreshToken(session.obtainedAtMs, System.currentTimeMillis())) _sessionExpired.trySend(Unit) else tryObtain()
+        }
     }
 
     private suspend fun tryObtain(): VkSession? = try {
@@ -62,7 +75,7 @@ class WebSessionManager @Inject constructor(
     } catch (e: CancellationException) {
         throw e
     } catch (e: VkSessionExpiredException) {
-        _sessionExpired.tryEmit(Unit)
+        _sessionExpired.trySend(Unit)
         null
     } catch (e: Exception) {
         refreshBlockedUntil = System.currentTimeMillis() + REFRESH_BACKOFF_MS
@@ -94,7 +107,11 @@ class WebSessionManager @Inject constructor(
         return VkSession(token.accessToken, token.userId, System.currentTimeMillis(), web = true).also { sessionStore.save(it, generation) }
     }
 
-    private companion object {
+    internal companion object {
+        // Токен моложе этого отвергнут не из-за возраста: его обновляют раз в пять минут.
+        private const val FRESH_TOKEN_MS = 60_000L
+
+        fun isFreshToken(obtainedAtMs: Long, nowMs: Long): Boolean = nowMs - obtainedAtMs < FRESH_TOKEN_MS
         const val REFRESH_BACKOFF_MS = 30_000L
     }
 }

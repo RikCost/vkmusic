@@ -1,5 +1,6 @@
 package com.vkmusic.data.api.vk
 
+import com.vkmusic.data.web.VkWebConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.DeserializationStrategy
@@ -21,7 +22,7 @@ class VkApiClient(
     private val json: Json,
     private val tokenProvider: suspend () -> String?,
     private val apiUrl: HttpUrl = VkConfig.API_URL.toHttpUrl(),
-    private val onAuthError: suspend () -> Unit = {},
+    private val onAuthError: suspend (rejectedToken: String) -> Unit = {},
 ) {
     suspend fun <T> call(
         method: String,
@@ -37,15 +38,17 @@ class VkApiClient(
         }.build()
         val request = Request.Builder()
             .url(apiUrl.newBuilder().addPathSegment(method).build())
-            .header("User-Agent", VkConfig.USER_AGENT)
-            .header(VkConfig.ANDROID_CLIENT_HEADER, VkConfig.ANDROID_CLIENT_VALUE)
+            // Токен выдан веб-сессии, поэтому и API вызывается как из неё: тем же браузером со страницы vk.ru.
+            .header("User-Agent", VkWebConfig.USER_AGENT)
+            .header("Origin", VkWebConfig.WEB_ORIGIN)
+            .header("Referer", VkWebConfig.BASE_URL)
             .post(body)
             .build()
         val text = okHttpClient.newCall(request).awaitBody()
         return try {
             withContext(Dispatchers.Default) { parse(text, deserializer) }
         } catch (e: VkApiException) {
-            if (e.isAuthError) onAuthError()
+            if (e.isAuthError) onAuthError(token)
             throw e
         }
     }

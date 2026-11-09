@@ -26,8 +26,12 @@ object VkWebConfig {
     const val WEB_TOKEN_VERSION = 1
     const val WEB_TOKEN_REFRESH_MS = 300_000L
 
-    // configuration.headers: Meridius ходит в веб как обычный Firefox.
-    const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:143.0) Gecko/20100101 Firefox/143.0"
+    // configuration.headers: Meridius ходит в веб как обычный Firefox. Версия — актуальная на ноябрь 2026:
+    // браузер годичной давности сам по себе выглядит подозрительно.
+    const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:159.0) Gecko/20100101 Firefox/159.0"
+    const val ACCEPT_LANGUAGE = "ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3"
+    const val WEB_ORIGIN = "https://vk.ru"
+    const val AUDIO_PAGE_URL = "https://vk.ru/audio"
     const val ID_ORIGIN = "https://id.vk.ru"
 
     // QR в Meridius опрашивается каждые 3 секунды.
