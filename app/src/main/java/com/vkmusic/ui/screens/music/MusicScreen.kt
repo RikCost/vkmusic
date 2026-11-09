@@ -7,6 +7,10 @@ import androidx.compose.material.icons.rounded.CloudOff
 import com.vkmusic.ui.components.ListSkeleton
 import com.vkmusic.ui.formatTracks
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
@@ -37,7 +41,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -62,7 +65,9 @@ private val TABS = listOf("Музыка", "Плейлисты", "Альбомы"
 
 @Composable
 fun MusicScreen(contentPadding: PaddingValues) {
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    // Вкладки листаются и свайпом, и тапом по заголовку; выбранная переживает поворот экрана.
+    val pager = rememberPagerState { TABS.size }
+    val scope = rememberCoroutineScope()
     var creating by rememberSaveable { mutableStateOf(false) }
     val playlistsViewModel: PlaylistsViewModel = hiltViewModel()
     // Создаётся вместе с экраном, чтобы альбомы грузились заранее, а не после открытия их вкладки.
@@ -70,15 +75,15 @@ fun MusicScreen(contentPadding: PaddingValues) {
 
     Column(Modifier.fillMaxSize()) {
         PageTopBar("Музыка") {
-            if (tab == 1) {
+            if (pager.currentPage == 1) {
                 IconButton(onClick = { creating = true }) {
                     Icon(Icons.Rounded.Add, contentDescription = "Создать плейлист")
                 }
             }
         }
-        AccentTabs(TABS, tab) { tab = it }
-        Box(Modifier.weight(1f)) {
-            when (tab) {
+        AccentTabs(TABS, pager.currentPage) { scope.launch { pager.animateScrollToPage(it) } }
+        HorizontalPager(pager, Modifier.weight(1f), key = { it }) { page ->
+            when (page) {
                 0 -> MyTracksTab(contentPadding)
                 1 -> PlaylistsTab(contentPadding, playlistsViewModel)
                 2 -> AlbumsTab(contentPadding, albumsViewModel)
