@@ -10,7 +10,7 @@ plugins {
 
 val versionMajor = 0
 val versionMinor = 4
-val versionPatch = 5
+val versionPatch = 6
 val appVersionName = "$versionMajor.$versionMinor.$versionPatch"
 
 // Ключ релиза лежит вне репозитория: keystore.properties не коммитится, а без него
