@@ -82,6 +82,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 fun MuVkRoot(viewModel: RootViewModel = hiltViewModel()) {
     val rootState by viewModel.state.collectAsStateWithLifecycle()
     val player by viewModel.player.collectAsStateWithLifecycle()
+    val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
     val current = rootState ?: return
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(viewModel) { viewModel.exportEvents.collect { snackbarHostState.showSnackbar(it) } }
@@ -112,7 +113,11 @@ fun MuVkRoot(viewModel: RootViewModel = hiltViewModel()) {
             !destination.hasRoute<PlayerRoute>()
         val topLevel = TopLevelDestination.entries.firstOrNull { destination.isOn(it) }
 
-        CompositionLocalProvider(LocalSnackbarHostState provides snackbarHostState, LocalNavigator provides navigator) {
+        CompositionLocalProvider(
+            LocalSnackbarHostState provides snackbarHostState,
+            LocalNavigator provides navigator,
+            LocalIsOnline provides isOnline,
+        ) {
             Scaffold(
                 modifier = Modifier.fillMaxSize(),
                 containerColor = MaterialTheme.colorScheme.background,
@@ -126,6 +131,7 @@ fun MuVkRoot(viewModel: RootViewModel = hiltViewModel()) {
                 bottomBar = {
                     if (showChrome) {
                         Column {
+                            OfflineBar()
                             player?.let {
                                 MiniPlayer(
                                     player = it,

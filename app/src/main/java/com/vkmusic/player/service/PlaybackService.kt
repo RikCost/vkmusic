@@ -13,6 +13,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.datasource.DataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
@@ -25,12 +26,14 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.vkmusic.MainActivity
 import com.vkmusic.R
+import com.vkmusic.data.network.NetworkMonitor
 import com.vkmusic.data.repository.SettingsRepository
 import com.vkmusic.data.repository.TrackUrlResolver
 import com.vkmusic.di.ApplicationScope
 import com.vkmusic.player.audio.AudioEffects
 import com.vkmusic.player.audio.EqualizerAudioProcessor
 import com.vkmusic.player.audio.LoudnessNormalizerAudioProcessor
+import com.vkmusic.player.queue.MAX_CONSECUTIVE_SKIPS
 import com.vkmusic.player.queue.MAX_RESOLVE_ATTEMPTS
 import com.vkmusic.player.queue.QueueExtender
 import com.vkmusic.player.queue.QueueStore
@@ -38,12 +41,14 @@ import com.vkmusic.player.queue.SavedQueue
 import com.vkmusic.player.queue.UnresolvedAction
 import com.vkmusic.player.queue.canRefreshUrl
 import com.vkmusic.player.queue.httpResponseCode
+import com.vkmusic.player.queue.isConnectionProblem
 import com.vkmusic.player.queue.isExpiredLinkResponse
 import com.vkmusic.player.queue.needsUrl
 import com.vkmusic.player.queue.toMediaItem
 import com.vkmusic.player.queue.toTrack
 import com.vkmusic.player.queue.unresolvedAction
 import com.vkmusic.player.queue.withResolvedUri
+import com.vkmusic.ui.AppMessages
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +71,8 @@ class PlaybackService : MediaSessionService() {
     @Inject lateinit var queueStore: QueueStore
     @Inject @field:ApplicationScope lateinit var appScope: CoroutineScope
     @Inject lateinit var trackUrlResolver: TrackUrlResolver
+    @Inject lateinit var networkMonitor: NetworkMonitor
+    @Inject lateinit var appMessages: AppMessages
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var mediaSession: MediaSession? = null
@@ -86,13 +93,35 @@ class PlaybackService : MediaSessionService() {
     // Треки, которым уже выдали новую ссылку после ошибки: второй раз ошибка — не просроченная ссылка.
     private val refreshedAfterError = mutableSetOf<String>()
 
+    // VK ответил, но ссылку не дал (трек закрыт правообладателем или удалён): такие пропускаются сразу.
+    private val unavailable = mutableSetOf<String>()
+
+    // Сколько раз текущий трек перезапускали после обрыва связи при живой сети.
+    private var networkRetries = 0
+
     override fun onCreate() {
         super.onCreate()
         setMediaNotificationProvider(
             DefaultMediaNotificationProvider.Builder(this).build().apply { setSmallIcon(R.drawable.ic_notification) },
         )
         val player = ExoPlayer.Builder(this, EffectsRenderersFactory(this, audioEffects))
-            .setMediaSourceFactory(DefaultMediaSourceFactory(playerDataSourceFactory))
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(playerDataSourceFactory)
+                    .setLoadErrorHandlingPolicy(PatientLoadErrorPolicy { networkMonitor.isOnline.value }),
+            )
+            // Аудио лёгкое, поэтому буфер — минуты, а не 50 секунд по умолчанию: короткий обрыв связи
+            // (лифт, перегон в метро) проходит незаметно, музыка играет из уже загруженного.
+            .setLoadControl(
+                DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(
+                        MIN_BUFFER_MS,
+                        MAX_BUFFER_MS,
+                        DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
+                        DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS,
+                    )
+                    .setPrioritizeTimeOverSizeThresholds(true)
+                    .build(),
+            )
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -124,6 +153,9 @@ class PlaybackService : MediaSessionService() {
                 rewindToStart = settings.rewindToStart
                 saveLatest = settings.saveLatest
             }
+        }
+        scope.launch {
+            networkMonitor.isOnline.collect { online -> if (online) onNetworkBack(player) }
         }
     }
 
@@ -175,6 +207,7 @@ class PlaybackService : MediaSessionService() {
             val id = player.currentMediaItem?.mediaId
             if (id != currentId) {
                 currentId = id
+                networkRetries = 0
                 refreshedAfterError.clear()
                 id?.let(resolveAttempts::remove)
                 retryJob?.cancel()
@@ -194,18 +227,30 @@ class PlaybackService : MediaSessionService() {
                 recoverUnresolved(player)
                 return
             }
+            // Обрыв связи — дело не в треке: ждём сеть и продолжаем с того же места.
+            if (error.isConnectionProblem()) {
+                retryAfterConnectionLoss(player)
+                return
+            }
             // Ссылка веб-VK истекла (трек долго лежал в очереди или в списке): берём новую по хешам / access_key.
-            // Прочие ошибки (формат, обрыв сети) новой ссылкой не лечатся.
-            val code = error.httpResponseCode() ?: return
-            if (!isExpiredLinkResponse(code)) return
-            val track = item.toTrack()?.takeIf { it.canRefreshUrl } ?: return
-            if (!refreshedAfterError.add(track.id)) return
-            replaceItem(player, player.currentMediaItemIndex, track.copy(url = null, isHls = false).toMediaItem())
-            resolveAhead(player)
+            // Если и с новой не играет или ошибка другая (трек закрыт правообладателем, битый файл) — пропускаем.
+            val track = item.toTrack()
+            val code = error.httpResponseCode()
+            if (code != null && isExpiredLinkResponse(code) && track != null && track.canRefreshUrl && refreshedAfterError.add(track.id)) {
+                replaceItem(player, player.currentMediaItemIndex, track.copy(url = null, isHls = false).toMediaItem())
+                resolveAhead(player)
+                return
+            }
+            skipUnplayable(player, countSkip = true)
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            if (isPlaying) consecutiveSkips = 0 else saveQueue(player)
+            if (isPlaying) {
+                consecutiveSkips = 0
+                networkRetries = 0
+            } else {
+                saveQueue(player)
+            }
         }
     }
 
@@ -220,7 +265,7 @@ class PlaybackService : MediaSessionService() {
             index = if (timeline.isEmpty) C.INDEX_UNSET else timeline.getNextWindowIndex(index, Player.REPEAT_MODE_OFF, player.shuffleModeEnabled)
         }
         val pending = indices.map(player::getMediaItemAt)
-            .filter { it.needsUrl && it.mediaId !in resolving && (resolveAttempts[it.mediaId] ?: 0) < MAX_RESOLVE_ATTEMPTS }
+            .filter { it.needsUrl && it.mediaId !in resolving && it.mediaId !in unavailable && (resolveAttempts[it.mediaId] ?: 0) < MAX_RESOLVE_ATTEMPTS }
             .mapNotNull { it.toTrack() }
         if (pending.isEmpty()) return
         val ids = pending.map { it.id }.toSet()
@@ -228,9 +273,15 @@ class PlaybackService : MediaSessionService() {
         ids.forEach { resolveAttempts[it] = (resolveAttempts[it] ?: 0) + 1 }
         scope.launch {
             try {
-                val resolved = trackUrlResolver.resolve(pending).filter { it.url != null }
+                val result = trackUrlResolver.resolveChecked(pending)
                 // Резолвер глотает исключения, и отмену тоже: без проверки подмена пошла бы в освобождённый плеер.
                 ensureActive()
+                // Без сети попытка не считается: иначе после лифта треки уже числились бы неиграбельными.
+                if (result.requestFailed && !networkMonitor.isOnline.value) {
+                    ids.forEach { resolveAttempts[it] = ((resolveAttempts[it] ?: 1) - 1).coerceAtLeast(0) }
+                }
+                unavailable += result.unavailableIds
+                val resolved = result.tracks.filter { it.url != null }
                 for (track in resolved) {
                     resolveAttempts -= track.id
                     val position = (0 until player.mediaItemCount).firstOrNull {
@@ -273,6 +324,13 @@ class PlaybackService : MediaSessionService() {
     private fun recoverUnresolved(player: ExoPlayer) {
         val item = player.currentMediaItem ?: return
         if (player.playerError == null || !item.needsUrl || item.mediaId in resolving) return
+        // VK сказал, что трека нет: ждать нечего. В предел пропусков подряд не идёт — это не сбой.
+        if (item.mediaId in unavailable) {
+            skipUnplayable(player, countSkip = false)
+            return
+        }
+        // Нет сети — ждём её (onNetworkBack), а не пролистываем очередь впустую.
+        if (!networkMonitor.isOnline.value) return
         val attempts = resolveAttempts[item.mediaId] ?: 0
         when (unresolvedAction(attempts, consecutiveSkips, player.hasNextMediaItem())) {
             UnresolvedAction.RETRY -> {
@@ -282,13 +340,54 @@ class PlaybackService : MediaSessionService() {
                     resolveAhead(player)
                 }
             }
-            UnresolvedAction.SKIP -> {
-                consecutiveSkips++
-                player.seekToNextMediaItem()
-                player.prepare()
-            }
+            UnresolvedAction.SKIP -> skipUnplayable(player, countSkip = true)
             UnresolvedAction.GIVE_UP -> Unit
         }
+    }
+
+    /**
+     * Трек не играет и не заиграет (закрыт правообладателем, битый): следующий, а не остановка плеера.
+     * [countSkip] — пропуск из-за сбоя, а не по ответу VK: таких подряд не больше [MAX_CONSECUTIVE_SKIPS],
+     * дальше плеер ждёт «Играть», чтобы при общей проблеме не пролистать всю очередь.
+     */
+    private fun skipUnplayable(player: ExoPlayer, countSkip: Boolean) {
+        if (!player.hasNextMediaItem()) return
+        if (countSkip && consecutiveSkips >= MAX_CONSECUTIVE_SKIPS) return
+        if (countSkip) consecutiveSkips++
+        val title = player.currentMediaItem?.mediaMetadata?.title?.toString()
+        retryJob?.cancel()
+        player.seekToNextMediaItem()
+        player.prepare()
+        if (title != null && isAppVisible()) appMessages.show("«$title» недоступен — играет следующий")
+    }
+
+    // Связь оборвалась, и загрузчик сдался. Без сети ждём её (onNetworkBack); при сети — пара повторов с паузой.
+    private fun retryAfterConnectionLoss(player: ExoPlayer) {
+        retryJob?.cancel()
+        if (!networkMonitor.isOnline.value || networkRetries >= MAX_NETWORK_RETRIES) return
+        networkRetries++
+        val wait = NETWORK_RETRY_DELAY_MS * networkRetries
+        retryJob = scope.launch {
+            delay(wait)
+            if (player.playerError != null) player.prepare()
+        }
+    }
+
+    // Сеть вернулась: плеер, вставший без неё, продолжает с той же позиции; треки без ссылок получают их.
+    private fun onNetworkBack(player: ExoPlayer) {
+        retryJob?.cancel()
+        networkRetries = 0
+        consecutiveSkips = 0
+        val item = player.currentMediaItem ?: return
+        // Заглушку текущего трека resolveAhead подменит и сам подготовит плеер.
+        if (item.needsUrl) resolveAttempts.remove(item.mediaId) else if (player.playerError != null) player.prepare()
+        resolveAhead(player)
+    }
+
+    // Сообщения — только когда приложение на экране: иначе они копятся и всплывут пачкой при открытии.
+    private fun isAppVisible(): Boolean {
+        val session = mediaSession ?: return false
+        return session.connectedControllers.any { it.packageName == packageName && !session.isMediaNotificationController(it) }
     }
 
     private fun extendQueueIfNeeded(player: Player) {
@@ -345,5 +444,9 @@ class PlaybackService : MediaSessionService() {
         const val SAVED_QUEUE_LIMIT = 500
         const val RESOLVE_AHEAD = 3
         const val RESOLVE_RETRY_DELAY_MS = 1_000L
+        const val MIN_BUFFER_MS = 4 * 60_000
+        const val MAX_BUFFER_MS = 10 * 60_000
+        const val MAX_NETWORK_RETRIES = 3
+        const val NETWORK_RETRY_DELAY_MS = 3_000L
     }
 }

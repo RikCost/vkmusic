@@ -2,8 +2,13 @@
 
 package com.vkmusic.player.queue
 
+import androidx.media3.common.PlaybackException
+import androidx.media3.datasource.DataSourceException
 import androidx.media3.datasource.HttpDataSource
 import com.vkmusic.data.model.Track
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import kotlin.random.Random
 
 // Столько раз подряд запрашивается ссылка трека, прежде чем он считается неиграбельным.
@@ -28,6 +33,21 @@ internal fun isExpiredLinkResponse(code: Int): Boolean = code == 403 || code == 
 /** HTTP-код ответа, из-за которого упало воспроизведение; null — ошибка не HTTP (формат, сеть, декодер). */
 internal fun Throwable.httpResponseCode(): Int? =
     generateSequence(this) { it.cause }.filterIsInstance<HttpDataSource.InvalidResponseCodeException>().firstOrNull()?.responseCode
+
+private val CONNECTION_ERROR_CODES = setOf(
+    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+)
+
+/**
+ * Ошибка из-за связи (нет сети, таймаут, оборванное соединение), а не из-за самого трека: такое лечится
+ * ожиданием сети, а не пропуском трека.
+ */
+internal fun Throwable.isConnectionProblem(): Boolean = generateSequence(this) { it.cause }.any { error ->
+    error is UnknownHostException || error is SocketTimeoutException || error is SocketException ||
+        (error is PlaybackException && error.errorCode in CONNECTION_ERROR_CODES) ||
+        (error is DataSourceException && error.reason in CONNECTION_ERROR_CODES)
+}
 
 /** Ссылку можно получить заново — как [Track.needsUrlResolution], но для трека, у которого она уже есть. */
 internal val Track.canRefreshUrl: Boolean get() = url != null && (webHashes != null || accessKey != null)

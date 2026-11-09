@@ -3,6 +3,7 @@ package com.vkmusic.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vkmusic.data.export.Mp3ExportRepository
+import com.vkmusic.data.network.NetworkMonitor
 import com.vkmusic.data.repository.AppSettings
 import com.vkmusic.data.repository.AuthMode
 import com.vkmusic.data.repository.AuthRepository
@@ -25,7 +26,10 @@ class RootViewModel @Inject constructor(
     private val playerConnection: PlayerConnection,
     mp3ExportRepository: Mp3ExportRepository,
     appMessages: AppMessages,
+    networkMonitor: NetworkMonitor,
 ) : ViewModel() {
+
+    val isOnline = networkMonitor.isOnline
 
     /** Сообщения, отправленные уже закрытыми экранами. */
     val appMessages = appMessages.messages

@@ -35,6 +35,10 @@ import androidx.media3.ui.compose.state.rememberNextButtonState
 import androidx.media3.ui.compose.state.rememberPreviousButtonState
 import androidx.media3.ui.compose.state.rememberProgressStateWithTickInterval
 import com.vkmusic.ui.components.Artwork
+import com.vkmusic.ui.components.SwipeDirection
+import com.vkmusic.ui.components.rememberSwipeState
+import com.vkmusic.ui.components.swipeOffsetX
+import com.vkmusic.ui.components.trackSwipes
 
 @Composable
 fun MiniPlayer(
@@ -52,12 +56,33 @@ fun MiniPlayer(
     val target = if (progress.durationMs > 0) (progress.currentPositionMs.toFloat() / progress.durationMs).coerceIn(0f, 1f) else 0f
     // Позиция приходит раз в полсекунды: полоска доезжает плавно, а не прыгает рывками.
     val fraction by animateFloatAsState(target, tween(500, easing = LinearEasing), label = "mini_progress")
+    val swipe = rememberSwipeState()
 
+    // Свайп влево — следующий трек, вправо — предыдущий, вверх — открыть плеер.
     Column(
         modifier = modifier
             .fillMaxWidth()
             .background(colors.surfaceContainer)
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .trackSwipes(
+                swipe,
+                canSwipe = { direction ->
+                    when (direction) {
+                        SwipeDirection.Left -> player.hasNextMediaItem()
+                        SwipeDirection.Right -> player.hasPreviousMediaItem()
+                        SwipeDirection.Up -> true
+                        SwipeDirection.Down -> false
+                    }
+                },
+                onSwipe = { direction ->
+                    when (direction) {
+                        SwipeDirection.Left -> player.seekToNextMediaItem()
+                        SwipeDirection.Right -> player.seekToPreviousMediaItem()
+                        SwipeDirection.Up -> onClick()
+                        SwipeDirection.Down -> Unit
+                    }
+                },
+            ),
     ) {
         Box(Modifier.fillMaxWidth().height(2.dp).background(colors.outlineVariant)) {
             Box(Modifier.fillMaxWidth(fraction).height(2.dp).background(colors.primary))
@@ -65,7 +90,7 @@ fun MiniPlayer(
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            modifier = Modifier.swipeOffsetX(swipe).padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         ) {
             Artwork(url = metadata.artworkUri?.toString(), key = item.mediaId, cornerRadius = 4.dp, modifier = Modifier.size(44.dp))
             Column(Modifier.weight(1f).padding(start = 4.dp)) {

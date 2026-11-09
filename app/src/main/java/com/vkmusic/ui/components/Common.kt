@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.PrimaryScrollableTabRow
 import com.vkmusic.ui.formatTracks
+import com.vkmusic.ui.RetryWhenBackOnline
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Cancel
 import androidx.compose.material.icons.rounded.Clear
@@ -125,6 +126,7 @@ fun MessageBox(text: String, modifier: Modifier = Modifier, icon: ImageVector? =
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         onRetry?.let { retry ->
+            RetryWhenBackOnline(retry)
             OutlinedButton(onClick = retry, modifier = Modifier.padding(top = 12.dp)) { Text("Повторить") }
         }
     }
@@ -132,6 +134,7 @@ fun MessageBox(text: String, modifier: Modifier = Modifier, icon: ImageVector? =
 
 @Composable
 private fun ErrorBanner(text: String, onRetry: () -> Unit) {
+    RetryWhenBackOnline(onRetry)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 4.dp),

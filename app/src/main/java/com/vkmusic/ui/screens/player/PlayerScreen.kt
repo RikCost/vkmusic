@@ -97,6 +97,13 @@ import com.vkmusic.ui.components.LyricsSheet
 import com.vkmusic.ui.components.TrackActionsMessages
 import com.vkmusic.ui.components.TrackActionsViewModel
 import com.vkmusic.ui.components.shareText
+import com.vkmusic.ui.components.SwipeDirection
+import com.vkmusic.ui.components.SwipeState
+import com.vkmusic.ui.components.rememberSwipeState
+import com.vkmusic.ui.components.swipeOffsetX
+import com.vkmusic.ui.components.trackSwipes
+import androidx.compose.ui.platform.LocalWindowInfo
+import kotlinx.coroutines.delay
 import com.vkmusic.ui.formatDuration
 import com.vkmusic.ui.navigation.LocalNavigator
 import kotlinx.coroutines.launch
@@ -109,10 +116,38 @@ fun PlayerScreen(
 ) {
     TrackActionsMessages(actions)
     var queueOpen by remember { mutableStateOf(false) }
+    val swipe = rememberSwipeState()
+    val screenHeight = LocalWindowInfo.current.containerSize.height.toFloat()
 
+    // Свайп по экрану: влево — следующий трек, вправо — предыдущий (едет обложка), вниз — свернуть плеер.
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .trackSwipes(
+                swipe,
+                canSwipe = { direction ->
+                    when (direction) {
+                        SwipeDirection.Left -> player?.hasNextMediaItem() == true
+                        SwipeDirection.Right -> player?.hasPreviousMediaItem() == true
+                        SwipeDirection.Down -> true
+                        SwipeDirection.Up -> false
+                    }
+                },
+                onSwipe = { direction ->
+                    when (direction) {
+                        SwipeDirection.Left -> player?.seekToNextMediaItem()
+                        SwipeDirection.Right -> player?.seekToPreviousMediaItem()
+                        SwipeDirection.Down -> {
+                            swipe.offsetY.animateTo(screenHeight)
+                            onBack()
+                            // Экран закрывается и сам; если назад не ушли, он вернётся на место.
+                            delay(CLOSE_FALLBACK_MS)
+                        }
+                        SwipeDirection.Up -> Unit
+                    }
+                },
+            )
+            .graphicsLayer { translationY = swipe.offsetY.value.coerceAtLeast(0f) }
             .background(MaterialTheme.colorScheme.background)
             .safeDrawingPadding()
             .padding(horizontal = 24.dp),
@@ -137,7 +172,7 @@ fun PlayerScreen(
                 Text("Плеер не подключён")
             }
         } else {
-            PlayerContent(player, actions)
+            PlayerContent(player, actions, swipe)
         }
     }
 
@@ -145,7 +180,7 @@ fun PlayerScreen(
 }
 
 @Composable
-private fun ColumnScope.PlayerContent(player: Player, actions: TrackActionsViewModel) {
+private fun ColumnScope.PlayerContent(player: Player, actions: TrackActionsViewModel, swipe: SwipeState) {
     val itemState = rememberCurrentMediaItemState(player)
     val metadata = itemState.mediaMetadata
     val key = itemState.mediaItem?.mediaId.orEmpty()
@@ -158,10 +193,12 @@ private fun ColumnScope.PlayerContent(player: Player, actions: TrackActionsViewM
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
         label = "cover_scale",
     )
-    val cover = Modifier.graphicsLayer {
-        scaleX = coverScale
-        scaleY = coverScale
-    }
+    val cover = Modifier
+        .swipeOffsetX(swipe)
+        .graphicsLayer {
+            scaleX = coverScale
+            scaleY = coverScale
+        }
     // В горизонтальной ориентации квадратная обложка во всю ширину выталкивала кнопки за экран:
     // там она слева во всю высоту, а название, перемотка и кнопки — справа.
     if (LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE) {
@@ -368,6 +405,9 @@ private fun ExportButton(status: ExportStatus?, onExport: () -> Unit, onCancel: 
 }
 
 private const val PAUSED_COVER_SCALE = 0.88f
+
+// Свайп вниз уводит плеер за экран и закрывает его; если закрыть не вышло, через это время он вернётся.
+private const val CLOSE_FALLBACK_MS = 1_500L
 
 @Composable
 private fun SeekBar(player: Player) {

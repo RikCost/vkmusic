@@ -24,6 +24,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import java.io.IOException
 
 /**
  * Музыка через веб-версию VK, как в Meridius (meridius-core `AudioRequests`, `PlaylistsRequest`,
@@ -145,7 +146,8 @@ class VkWebAudioRepository(
             if (result is JsonArray) return WebAudioParser.tracks(result, me)
             delay(EMPTY_RETRY_MS)
         }
-        return emptyList()
+        // Сбой, а не «ссылок нет»: иначе плеер счёл бы все треки пачки недоступными и пропустил их.
+        throw IOException("VK не отдал ссылки на треки")
     }
 
     private fun reloadId(track: Track): String {
